@@ -277,6 +277,9 @@ export default $config({
     // the name first breaks that resource cycle.
     const s3AccessRoleName = `${$app.name}-${$app.stage}-s3-access`
     const s3AccessRoleArn = $interpolate`arn:aws:iam::${aws.getCallerIdentityOutput().accountId}:role/${s3AccessRoleName}`
+    const volumeBucketPrefix = envOr('VOLUME_BUCKET_PREFIX', `${$app.name}-${$app.stage}-volume-`)
+    const volumeBucketArn = `arn:aws:s3:::${volumeBucketPrefix}*`
+    const volumeObjectArn = `arn:aws:s3:::${volumeBucketPrefix}*/*`
 
     // ─── 4. AUTH ─────────────────────────────────────────────────────────────
     // OIDC is delegated to an external provider (Auth0/Okta/etc.) via
@@ -434,6 +437,7 @@ export default $config({
           // s3:* — that tail (PutBucketPolicy/PutBucketAcl/…) is what would
           // let a compromised API expose volume buckets publicly. A new S3
           // call in code needs a matching action added here.
+          // Legacy resources stay during the transition so old volumes work.
           actions: [
             's3:CreateBucket',
             's3:PutBucketTagging',
@@ -443,7 +447,12 @@ export default $config({
             's3:DeleteObjectVersion',
             's3:DeleteBucket',
           ],
-          resources: ['arn:aws:s3:::boxlite-volume-*', 'arn:aws:s3:::boxlite-volume-*/*'],
+          resources: [
+            volumeBucketArn,
+            volumeObjectArn,
+            'arn:aws:s3:::boxlite-volume-*',
+            'arn:aws:s3:::boxlite-volume-*/*',
+          ],
         },
       ],
       scaling: { min: 1, max: 4 },
@@ -540,6 +549,7 @@ export default $config({
         S3_DEFAULT_BUCKET: storage.name,
         S3_ACCOUNT_ID: aws.getCallerIdentityOutput().accountId,
         S3_ROLE_NAME: s3AccessRoleName,
+        VOLUME_BUCKET_PREFIX: volumeBucketPrefix,
 
         // Proxy
         PROXY_DOMAIN: envOr('PROXY_DOMAIN', `proxy.${stackDomain}`),
@@ -819,16 +829,17 @@ export default $config({
         // Exactly Mountpoint for Amazon S3's documented permission set —
         // mount-s3 is the runner's only S3 consumer (volumes.go). Bucket
         // lifecycle (create/tag/delete) lives on the Api task role instead.
+        // Legacy resources stay during the transition so old volumes work.
         Statement: [
           {
             Effect: 'Allow',
             Action: ['s3:ListBucket'],
-            Resource: ['arn:aws:s3:::boxlite-volume-*'],
+            Resource: [volumeBucketArn, 'arn:aws:s3:::boxlite-volume-*'],
           },
           {
             Effect: 'Allow',
             Action: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:AbortMultipartUpload'],
-            Resource: ['arn:aws:s3:::boxlite-volume-*/*'],
+            Resource: [volumeObjectArn, 'arn:aws:s3:::boxlite-volume-*/*'],
           },
         ],
       }),

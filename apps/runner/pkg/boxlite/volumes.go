@@ -48,6 +48,14 @@ func getVolumeMountBasePath() string {
 	return "/mnt"
 }
 
+// TODO: Delete this compatibility fallback once every API deployment sends bucketName.
+func volumeBucketName(vol dto.VolumeDTO) string {
+	if vol.BucketName != nil && strings.TrimSpace(*vol.BucketName) != "" {
+		return strings.TrimSpace(*vol.BucketName)
+	}
+	return fmt.Sprintf("%s%s", volumeMountPrefix, vol.VolumeId)
+}
+
 func (c *Client) getVolumeMounts(ctx context.Context, volumes []dto.VolumeDTO) ([]volumeMount, error) {
 	volumeMounts := make([]volumeMount, 0, len(volumes))
 
@@ -55,6 +63,7 @@ func (c *Client) getVolumeMounts(ctx context.Context, volumes []dto.VolumeDTO) (
 
 	for _, vol := range volumes {
 		volumeIdPrefixed := fmt.Sprintf("%s%s", volumeMountPrefix, vol.VolumeId)
+		bucketName := volumeBucketName(vol)
 		baseMountPath := filepath.Join(getVolumeMountBasePath(), volumeIdPrefixed)
 
 		subpathStr := ""
@@ -63,7 +72,7 @@ func (c *Client) getVolumeMounts(ctx context.Context, volumes []dto.VolumeDTO) (
 		}
 
 		if !fuseMountedVolumes[volumeIdPrefixed] {
-			err := c.ensureVolumeFuseMounted(ctx, volumeIdPrefixed, baseMountPath)
+			err := c.ensureVolumeFuseMounted(ctx, volumeIdPrefixed, bucketName, baseMountPath)
 			if err != nil {
 				return nil, err
 			}
@@ -82,7 +91,7 @@ func (c *Client) getVolumeMounts(ctx context.Context, volumes []dto.VolumeDTO) (
 			}
 		}
 
-		c.logger.DebugContext(ctx, "binding volume subpath", "volumeId", volumeIdPrefixed, "subpath", subpathStr, "mountPath", vol.MountPath)
+		c.logger.DebugContext(ctx, "binding volume subpath", "volumeId", vol.VolumeId, "bucketName", bucketName, "subpath", subpathStr, "mountPath", vol.MountPath)
 		volumeMounts = append(volumeMounts, volumeMount{
 			hostPath:  bindSource,
 			mountPath: vol.MountPath,
@@ -119,7 +128,7 @@ func (c *Client) ensureVolumeMountsFromMetadata(ctx context.Context, boxID strin
 	return c.recordBoxVolumeMounts(ctx, boxID, volumeMounts)
 }
 
-func (c *Client) ensureVolumeFuseMounted(ctx context.Context, volumeId string, mountPath string) error {
+func (c *Client) ensureVolumeFuseMounted(ctx context.Context, volumeId string, bucketName string, mountPath string) error {
 	c.volumeMutexesMutex.Lock()
 	volumeMutex, exists := c.volumeMutexes[volumeId]
 	if !exists {
@@ -132,7 +141,7 @@ func (c *Client) ensureVolumeFuseMounted(ctx context.Context, volumeId string, m
 	defer volumeMutex.Unlock()
 
 	if c.isDirectoryMounted(mountPath) {
-		c.logger.DebugContext(ctx, "volume already mounted", "volumeId", volumeId, "mountPath", mountPath)
+		c.logger.DebugContext(ctx, "volume already mounted", "volumeId", volumeId, "bucketName", bucketName, "mountPath", mountPath)
 		return nil
 	}
 
@@ -144,9 +153,9 @@ func (c *Client) ensureVolumeFuseMounted(ctx context.Context, volumeId string, m
 		return fmt.Errorf("failed to create mount directory %s: %s", mountPath, err)
 	}
 
-	c.logger.InfoContext(ctx, "mounting S3 volume", "volumeId", volumeId, "mountPath", mountPath)
+	c.logger.InfoContext(ctx, "mounting S3 volume", "volumeId", volumeId, "bucketName", bucketName, "mountPath", mountPath)
 
-	cmd := c.getMountCmd(ctx, volumeId, mountPath)
+	cmd := c.getMountCmd(ctx, bucketName, mountPath)
 	err = cmd.Run()
 	if err != nil {
 		if !dirExisted {
@@ -155,7 +164,7 @@ func (c *Client) ensureVolumeFuseMounted(ctx context.Context, volumeId string, m
 				c.logger.WarnContext(ctx, "failed to remove mount directory", "path", mountPath, "error", removeErr)
 			}
 		}
-		return fmt.Errorf("failed to mount S3 volume %s to %s: %s", volumeId, mountPath, err)
+		return fmt.Errorf("failed to mount S3 volume %s to %s: %s", bucketName, mountPath, err)
 	}
 
 	err = c.waitForMountReady(ctx, mountPath)
@@ -173,7 +182,7 @@ func (c *Client) ensureVolumeFuseMounted(ctx context.Context, volumeId string, m
 		return fmt.Errorf("mount %s not ready after mounting: %s", mountPath, err)
 	}
 
-	c.logger.InfoContext(ctx, "mounted S3 volume", "volumeId", volumeId, "mountPath", mountPath)
+	c.logger.InfoContext(ctx, "mounted S3 volume", "volumeId", volumeId, "bucketName", bucketName, "mountPath", mountPath)
 	return nil
 }
 

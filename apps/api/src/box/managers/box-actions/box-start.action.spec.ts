@@ -28,6 +28,14 @@ describe('BoxStartAction.handleRunnerBoxStoppedStateOnDesiredStateStart', () => 
     box.desiredState = BoxDesiredState.STARTED
     box.pending = true
 
+    box.volumes = [
+      {
+        volumeId: 'volume-1',
+        mountPath: '/data',
+        subpath: 'workspace',
+        bucketName: 'boxlite-dev-volume-volume-1',
+      },
+    ]
     const ownRunner = { id: ownRunnerId, state: RunnerState.READY } as Runner
 
     // findOneOrFail must return the runner that matches the requested id so we can
@@ -81,6 +89,14 @@ describe('BoxStartAction.handleRunnerBoxStoppedStateOnDesiredStateStart', () => 
     // The action started the box on its OWN runner, not a different one.
     expect(runnerUsedForStart?.id).toBe(ownRunnerId)
     expect(startBox).toHaveBeenCalledWith(box.id, box.authToken, expect.any(Object))
+    expect(JSON.parse(((startBox.mock.calls as unknown[][])[0][2] as { volumes: string }).volumes)).toEqual([
+      {
+        volumeId: 'volume-1',
+        mountPath: '/data',
+        subpath: 'workspace',
+        bucketName: 'boxlite-dev-volume-volume-1',
+      },
+    ])
     // findOneOrFail was only ever asked about the box's own runner.
     for (const call of runnerService.findOneOrFail.mock.calls) {
       expect(call[0]).toBe(ownRunnerId)
@@ -134,6 +150,13 @@ describe('BoxStartAction.handleRunnerBoxUnknownStateOnDesiredStateStart', () => 
 
     const box = new Box('region-1', 'fresh-box')
     box.runnerId = runnerId
+    box.volumes = [
+      {
+        volumeId: 'volume-1',
+        mountPath: '/data',
+        bucketName: 'boxlite-dev-volume-volume-1',
+      },
+    ]
     box.image = 'boxlite/base'
     box.state = BoxState.UNKNOWN
     box.desiredState = BoxDesiredState.STARTED
@@ -169,6 +192,13 @@ describe('BoxStartAction.handleRunnerBoxUnknownStateOnDesiredStateStart', () => 
     const result = await (action as BoxAction).run(box, lockCode)
 
     expect(createBox).toHaveBeenCalledWith(box, expect.any(Object))
+    expect(JSON.parse(((createBox.mock.calls as unknown[][])[0][1] as { volumes: string }).volumes)).toEqual([
+      {
+        volumeId: 'volume-1',
+        mountPath: '/data',
+        bucketName: 'boxlite-dev-volume-volume-1',
+      },
+    ])
     expect(result).toBe(SYNC_AGAIN)
     expect(updatedFields.some((u) => u.state === BoxState.CREATING)).toBe(true)
   })

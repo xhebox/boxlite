@@ -5,6 +5,7 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
+**bucketName** | **string** |  | [optional] [default to undefined]
 **mountPath** | **string** |  | [optional] [default to undefined]
 **subpath** | **string** |  | [optional] [default to undefined]
 **volumeId** | **string** |  | [optional] [default to undefined]
@@ -15,6 +16,7 @@ Name | Type | Description | Notes
 import { DtoVolumeDTO } from './api';
 
 const instance: DtoVolumeDTO = {
+    bucketName,
     mountPath,
     subpath,
     volumeId,

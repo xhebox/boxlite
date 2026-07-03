@@ -15,6 +15,7 @@
 
 
 export interface DtoVolumeDTO {
+    'bucketName'?: string;
     'mountPath'?: string;
     'subpath'?: string;
     'volumeId'?: string;

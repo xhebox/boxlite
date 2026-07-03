@@ -45,7 +45,10 @@ export class Volume {
   @Column({ nullable: true })
   lastUsedAt?: Date
 
+  @Column({ nullable: true })
+  bucketName?: string
+
   public getBucketName(): string {
-    return `boxlite-volume-${this.id}`
+    return this.bucketName || `boxlite-volume-${this.id}`
   }
 }

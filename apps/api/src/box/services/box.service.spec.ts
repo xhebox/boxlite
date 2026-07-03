@@ -151,3 +151,35 @@ describe('BoxService.ensureStartedForProxy', () => {
     expect(warn).toHaveBeenCalled()
   })
 })
+
+describe('BoxService.resolveVolumes', () => {
+  it('resolves public volume inputs to canonical internal volume references', async () => {
+    const service = Object.create(BoxService.prototype) as any
+    const readyVolume = {
+      id: 'canonical-volume-id',
+      getBucketName: () => 'boxlite-dev-volume-canonical-volume-id',
+    }
+    service.volumeService = {
+      resolveReadyVolumes: jest.fn(async () => [readyVolume]),
+    }
+
+    await expect(
+      service.resolveVolumes('org-1', [
+        {
+          volumeId: 'data',
+          mountPath: '/data',
+          subpath: 'workspace',
+        },
+      ]),
+    ).resolves.toEqual([
+      {
+        volumeId: 'canonical-volume-id',
+        mountPath: '/data',
+        subpath: 'workspace',
+        bucketName: 'boxlite-dev-volume-canonical-volume-id',
+      },
+    ])
+
+    expect(service.volumeService.resolveReadyVolumes).toHaveBeenCalledWith('org-1', ['data'])
+  })
+})
