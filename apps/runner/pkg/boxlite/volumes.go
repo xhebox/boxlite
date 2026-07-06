@@ -164,7 +164,7 @@ func (c *Client) ensureVolumeFuseMounted(ctx context.Context, volumeId string, b
 				c.logger.WarnContext(ctx, "failed to remove mount directory", "path", mountPath, "error", removeErr)
 			}
 		}
-		return fmt.Errorf("failed to mount S3 volume %s to %s: %s", bucketName, mountPath, err)
+		return fmt.Errorf("failed to mount S3 volume (volumeId=%s, bucketName=%s) to %s: %w", volumeId, bucketName, mountPath, err)
 	}
 
 	err = c.waitForMountReady(ctx, mountPath)
