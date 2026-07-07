@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0
  */
 
+import { validateVolumeBucketPrefix } from '../common/utils/volume-bucket-name'
+
 function csvEnv(value?: string): string[] {
   return (value ?? '')
     .split(',')
@@ -93,7 +95,7 @@ const configuration = {
     defaultBucket: process.env.S3_DEFAULT_BUCKET,
     accountId: process.env.S3_ACCOUNT_ID,
     roleName: process.env.S3_ROLE_NAME,
-    volumeBucketPrefix: process.env.VOLUME_BUCKET_PREFIX || 'boxlite-volume-',
+    volumeBucketPrefix: validateVolumeBucketPrefix(process.env.VOLUME_BUCKET_PREFIX || 'boxlite-volume-'),
   },
   notificationGatewayDisabled: process.env.NOTIFICATION_GATEWAY_DISABLED === 'true',
   skipConnections: process.env.SKIP_CONNECTIONS === 'true',

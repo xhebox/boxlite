@@ -65,6 +65,16 @@ describe('VolumeService.create', () => {
     expect(volume.bucketName).toBe('boxlite-volume-volume-uuid')
   })
 
+  it('rejects invalid configured bucket prefixes before persisting the volume', async () => {
+    const { service, volumeRepository } = makeService({
+      's3.endpoint': 'http://minio:9000',
+      's3.volumeBucketPrefix': 'BoxLite_volume_',
+    })
+
+    await expect(service.create(organization, {})).rejects.toThrow(/VOLUME_BUCKET_PREFIX/)
+    expect(volumeRepository.save).not.toHaveBeenCalled()
+  })
+
   it('rejects create when object storage is not configured', async () => {
     const { service } = makeService()
 
