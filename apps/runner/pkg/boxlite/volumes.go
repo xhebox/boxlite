@@ -48,22 +48,18 @@ func getVolumeMountBasePath() string {
 	return "/mnt"
 }
 
-// TODO: Delete this compatibility fallback once every API deployment sends bucketName.
-func volumeBucketName(vol dto.VolumeDTO) string {
-	if vol.BucketName != nil && strings.TrimSpace(*vol.BucketName) != "" {
-		return strings.TrimSpace(*vol.BucketName)
-	}
-	return fmt.Sprintf("%s%s", volumeMountPrefix, vol.VolumeId)
-}
-
 func (c *Client) getVolumeMounts(ctx context.Context, volumes []dto.VolumeDTO) ([]volumeMount, error) {
 	volumeMounts := make([]volumeMount, 0, len(volumes))
 
 	fuseMountedVolumes := make(map[string]bool)
 
 	for _, vol := range volumes {
+		if vol.BucketName == nil || strings.TrimSpace(*vol.BucketName) == "" {
+			return nil, fmt.Errorf("volume %s is missing bucketName", vol.VolumeId)
+		}
+
 		volumeIdPrefixed := fmt.Sprintf("%s%s", volumeMountPrefix, vol.VolumeId)
-		bucketName := volumeBucketName(vol)
+		bucketName := strings.TrimSpace(*vol.BucketName)
 		baseMountPath := filepath.Join(getVolumeMountBasePath(), volumeIdPrefixed)
 
 		subpathStr := ""
