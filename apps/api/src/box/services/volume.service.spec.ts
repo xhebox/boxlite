@@ -4,17 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0
  */
 
-jest.mock('uuid', () => ({
-  v4: jest.fn(() => 'volume-uuid'),
-}))
-
-import { NotFoundException, ServiceUnavailableException } from '@nestjs/common'
+import { NotFoundException } from '@nestjs/common'
 import { BadRequestError } from '../../exceptions/bad-request.exception'
 import { Volume } from '../entities/volume.entity'
 import { VolumeState } from '../enums/volume-state.enum'
 import { VolumeService } from './volume.service'
 
-function makeService(configValues: Record<string, unknown> = {}) {
+function makeService() {
   const volumeRepository = {
     findOne: jest.fn(),
     find: jest.fn(),
@@ -24,7 +20,7 @@ function makeService(configValues: Record<string, unknown> = {}) {
     assertOrganizationIsNotSuspended: jest.fn(),
   }
   const configService = {
-    get: jest.fn((key: string) => configValues[key]),
+    get: jest.fn(),
   }
 
   const service = new VolumeService(
@@ -38,49 +34,6 @@ function makeService(configValues: Record<string, unknown> = {}) {
   return { service, volumeRepository, organizationService, configService }
 }
 
-describe('VolumeService.create', () => {
-  const organization = { id: 'org-1' } as any
-
-  it('persists bucketName using the configured volume bucket prefix', async () => {
-    const { service, volumeRepository } = makeService({
-      's3.endpoint': 'http://minio:9000',
-      's3.volumeBucketPrefix': 'boxlite-dev-volume-',
-    })
-    volumeRepository.findOne.mockResolvedValue(null)
-
-    const volume = await service.create(organization, { name: 'data' })
-
-    expect(volume.id).toBe('volume-uuid')
-    expect(volume.name).toBe('data')
-    expect(volume.bucketName).toBe('boxlite-dev-volume-volume-uuid')
-    expect(volumeRepository.save).toHaveBeenCalledWith(expect.objectContaining({ bucketName: volume.bucketName }))
-  })
-
-  it('uses the legacy prefix when no volume bucket prefix is configured', async () => {
-    const { service, volumeRepository } = makeService({ 's3.endpoint': 'http://minio:9000' })
-    volumeRepository.findOne.mockResolvedValue(null)
-
-    const volume = await service.create(organization, {})
-
-    expect(volume.bucketName).toBe('boxlite-volume-volume-uuid')
-  })
-
-  it('rejects invalid configured bucket prefixes before persisting the volume', async () => {
-    const { service, volumeRepository } = makeService({
-      's3.endpoint': 'http://minio:9000',
-      's3.volumeBucketPrefix': 'BoxLite_volume_',
-    })
-
-    await expect(service.create(organization, {})).rejects.toThrow(/VOLUME_BUCKET_PREFIX/)
-    expect(volumeRepository.save).not.toHaveBeenCalled()
-  })
-
-  it('rejects create when object storage is not configured', async () => {
-    const { service } = makeService()
-
-    await expect(service.create(organization, {})).rejects.toBeInstanceOf(ServiceUnavailableException)
-  })
-})
 
 describe('VolumeService.resolveReadyVolumes', () => {
   it('returns requested volumes in request order and accepts ids or names', async () => {
@@ -89,13 +42,11 @@ describe('VolumeService.resolveReadyVolumes', () => {
       id: 'volume-id-1',
       name: 'data',
       state: VolumeState.READY,
-      bucketName: 'boxlite-dev-volume-volume-id-1',
     })
     const byName = Object.assign(new Volume(), {
       id: 'volume-id-2',
       name: 'cache',
       state: VolumeState.READY,
-      bucketName: 'boxlite-dev-volume-volume-id-2',
     })
     volumeRepository.find.mockResolvedValue([byName, byId])
 

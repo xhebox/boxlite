@@ -357,8 +357,6 @@ definitions:
     type: object
   dto.VolumeDTO:
     properties:
-      bucketName:
-        type: string
       mountPath:
         type: string
       subpath:

@@ -1810,9 +1810,6 @@ const docTemplate = `{
         "dto.VolumeDTO": {
             "type": "object",
             "properties": {
-                "bucketName": {
-                    "type": "string"
-                },
                 "mountPath": {
                     "type": "string"
                 },

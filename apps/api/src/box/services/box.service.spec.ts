@@ -153,11 +153,10 @@ describe('BoxService.ensureStartedForProxy', () => {
 })
 
 describe('BoxService.resolveVolumes', () => {
-  it('resolves public volume inputs to canonical internal volume references', async () => {
+  it('resolves public volume inputs to canonical volume ids', async () => {
     const service = Object.create(BoxService.prototype) as any
     const readyVolume = {
       id: 'canonical-volume-id',
-      getBucketName: () => 'boxlite-dev-volume-canonical-volume-id',
     }
     service.volumeService = {
       resolveReadyVolumes: jest.fn(async () => [readyVolume]),
@@ -176,7 +175,6 @@ describe('BoxService.resolveVolumes', () => {
         volumeId: 'canonical-volume-id',
         mountPath: '/data',
         subpath: 'workspace',
-        bucketName: 'boxlite-dev-volume-canonical-volume-id',
       },
     ])
 

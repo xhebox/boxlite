@@ -8,16 +8,10 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryColumn, OneToOne, Uniqu
 import { BoxState } from '../enums/box-state.enum'
 import { BoxDesiredState } from '../enums/box-desired-state.enum'
 import { BoxClass } from '../enums/box-class.enum'
+import { BoxVolume } from '../dto/box.dto'
 import { nanoid } from 'nanoid'
 import { BoxLastActivity } from './box-last-activity.entity'
 import { BOX_ID_LENGTH, BOX_ID_REGEX, generateBoxId } from '../utils/box-id.util'
-
-export type BoxVolumeReference = {
-  volumeId: string
-  mountPath: string
-  subpath?: string
-  bucketName?: string
-}
 
 @Entity('box')
 @Unique(['organizationId', 'name'])
@@ -137,7 +131,7 @@ export class Box {
     type: 'jsonb',
     default: [],
   })
-  volumes: BoxVolumeReference[] = []
+  volumes: BoxVolume[] = []
 
   @CreateDateColumn({
     type: 'timestamp with time zone',

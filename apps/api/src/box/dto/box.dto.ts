@@ -260,11 +260,7 @@ export class BoxDto {
       networkBlockAll: box.networkBlockAll,
       networkAllowList: box.networkAllowList,
       labels: box.labels,
-      volumes: box.volumes?.map((volume) => ({
-        volumeId: volume.volumeId,
-        mountPath: volume.mountPath,
-        subpath: volume.subpath,
-      })),
+      volumes: box.volumes,
       state: this.getBoxState(box),
       desiredState: box.desiredState,
       errorReason: box.errorReason,

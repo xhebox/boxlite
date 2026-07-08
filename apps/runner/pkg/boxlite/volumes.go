@@ -49,17 +49,17 @@ func getVolumeMountBasePath() string {
 }
 
 func (c *Client) getVolumeMounts(ctx context.Context, volumes []dto.VolumeDTO) ([]volumeMount, error) {
-	volumeMounts := make([]volumeMount, 0, len(volumes))
+	runnerConfig, err := config.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load runner config for volume mounts: %w", err)
+	}
 
+	volumeMounts := make([]volumeMount, 0, len(volumes))
 	fuseMountedVolumes := make(map[string]bool)
 
 	for _, vol := range volumes {
-		if vol.BucketName == nil || strings.TrimSpace(*vol.BucketName) == "" {
-			return nil, fmt.Errorf("volume %s is missing bucketName", vol.VolumeId)
-		}
-
 		volumeIdPrefixed := fmt.Sprintf("%s%s", volumeMountPrefix, vol.VolumeId)
-		bucketName := strings.TrimSpace(*vol.BucketName)
+		bucketName := fmt.Sprintf("%s%s", runnerConfig.VolumeBucketPrefix, vol.VolumeId)
 		baseMountPath := filepath.Join(getVolumeMountBasePath(), volumeIdPrefixed)
 
 		subpathStr := ""
@@ -68,7 +68,7 @@ func (c *Client) getVolumeMounts(ctx context.Context, volumes []dto.VolumeDTO) (
 		}
 
 		if !fuseMountedVolumes[volumeIdPrefixed] {
-			err := c.ensureVolumeFuseMounted(ctx, volumeIdPrefixed, bucketName, baseMountPath)
+			err := c.ensureVolumeFuseMounted(ctx, vol.VolumeId, bucketName, baseMountPath)
 			if err != nil {
 				return nil, err
 			}

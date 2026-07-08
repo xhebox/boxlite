@@ -21,7 +21,6 @@ import { TypedConfigService } from '../../config/typed-config.service'
 import { RedisLockProvider } from '../common/redis-lock.provider'
 import { BoxRepository } from '../repositories/box.repository'
 import { BoxDesiredState } from '../enums/box-desired-state.enum'
-import { resolveVolumeBucketName } from '../../common/utils/volume-bucket-name'
 
 @Injectable()
 export class VolumeService {
@@ -47,10 +46,7 @@ export class VolumeService {
 
     // Generate ID
     volume.id = uuidv4()
-    volume.bucketName = resolveVolumeBucketName(
-      this.configService.get('s3.volumeBucketPrefix') || 'boxlite-volume-',
-      volume.id,
-    )
+
     // Set name from DTO or use ID as default
     volume.name = createVolumeDto.name || volume.id
 

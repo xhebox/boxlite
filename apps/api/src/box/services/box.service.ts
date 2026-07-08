@@ -7,7 +7,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Not, Repository, LessThan, In, JsonContains, FindOptionsWhere, ILike } from 'typeorm'
-import { Box, BoxVolumeReference } from '../entities/box.entity'
+import { Box } from '../entities/box.entity'
 import { persistWithGeneratedBoxName } from '../utils/box-name-generator'
 import { CreateBoxDto } from '../dto/create-box.dto'
 import { ResizeBoxDto } from '../dto/resize-box.dto'
@@ -1483,7 +1483,7 @@ export class BoxService {
     return networkAllowList
   }
 
-  private async resolveVolumes(organizationId: string, volumes?: BoxVolume[]): Promise<BoxVolumeReference[]> {
+  private async resolveVolumes(organizationId: string, volumes?: BoxVolume[]): Promise<BoxVolume[]> {
     if (!volumes?.length) {
       return []
     }
@@ -1497,7 +1497,6 @@ export class BoxService {
       volumeId: readyVolumes[index].id,
       mountPath: volume.mountPath,
       ...(volume.subpath !== undefined ? { subpath: volume.subpath } : {}),
-      bucketName: readyVolumes[index].getBucketName(),
     }))
 
     try {

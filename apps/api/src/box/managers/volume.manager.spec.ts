@@ -91,13 +91,12 @@ describe('VolumeManager S3 client setup', () => {
     )
   })
 
-  it('creates buckets using the persisted volume bucket name', async () => {
+  it('creates buckets using the configured volume bucket prefix and volume id', async () => {
     mockSend.mockResolvedValue({})
     const volume = new Volume()
     volume.id = 'volume-1'
     volume.organizationId = 'org-1'
     volume.state = VolumeState.PENDING_CREATE
-    volume.bucketName = 'boxlite-dev-volume-volume-1'
 
     const volumeRepository = {
       find: jest.fn(async () => [volume]),
@@ -111,8 +110,8 @@ describe('VolumeManager S3 client setup', () => {
     const manager = new VolumeManager(
       volumeRepository as any,
       {
-        get: jest.fn((key: string) => ({ ...awsConfig, environment: 'test' })[key]),
-        getOrThrow: jest.fn((key: string) => ({ ...awsConfig, environment: 'test' })[key]),
+        get: jest.fn((key: string) => ({ ...awsConfig, 's3.volumeBucketPrefix': 'boxlite-dev-volume-', environment: 'test' })[key]),
+        getOrThrow: jest.fn((key: string) => ({ ...awsConfig, 's3.volumeBucketPrefix': 'boxlite-dev-volume-', environment: 'test' })[key]),
       } as any,
       redis as any,
       redisLockProvider as any,
@@ -127,7 +126,7 @@ describe('VolumeManager S3 client setup', () => {
     )
   })
 
-  it('deletes buckets using the persisted volume bucket name', async () => {
+  it('deletes buckets using the configured volume bucket prefix and volume id', async () => {
     const deleteBucket = jest.spyOn(deleteS3BucketUtils, 'deleteS3Bucket').mockResolvedValue(undefined)
     try {
       const volume = new Volume()
@@ -135,7 +134,6 @@ describe('VolumeManager S3 client setup', () => {
       volume.organizationId = 'org-1'
       volume.name = 'data'
       volume.state = VolumeState.PENDING_DELETE
-      volume.bucketName = 'boxlite-dev-volume-volume-1'
 
       const volumeRepository = {
         find: jest.fn(async () => [volume]),
@@ -150,8 +148,8 @@ describe('VolumeManager S3 client setup', () => {
       const manager = new VolumeManager(
         volumeRepository as any,
         {
-          get: jest.fn((key: string) => awsConfig[key]),
-          getOrThrow: jest.fn((key: string) => awsConfig[key]),
+          get: jest.fn((key: string) => ({ ...awsConfig, 's3.volumeBucketPrefix': 'boxlite-dev-volume-' })[key]),
+          getOrThrow: jest.fn((key: string) => ({ ...awsConfig, 's3.volumeBucketPrefix': 'boxlite-dev-volume-' })[key]),
         } as any,
         redis as any,
         redisLockProvider as any,
