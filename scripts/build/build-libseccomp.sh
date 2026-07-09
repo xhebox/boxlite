@@ -118,8 +118,18 @@ ensure_libseccomp_for_target() {
 
     local arch_prefix
     arch_prefix=$(echo "$target" | cut -d'-' -f1)
+    local rustc_host
+    rustc_host=$(rustc -vV | while read -r key value; do
+        if [ "$key" = "host:" ]; then
+            printf '%s\n' "$value"
+            break
+        fi
+    done)
+
     local cc="${arch_prefix}-linux-musl-gcc"
-    if ! command -v "$cc" >/dev/null 2>&1; then
+    if [ "$rustc_host" = "$target" ]; then
+        cc="${CC:-cc}"
+    elif ! command -v "$cc" >/dev/null 2>&1; then
         echo "ERROR: musl cross-compiler $cc not found in PATH" >&2
         echo "  Run scripts/setup/setup-macos.sh (or setup-ubuntu.sh / setup-musllinux.sh)" >&2
         return 1

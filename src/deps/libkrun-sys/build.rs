@@ -68,6 +68,39 @@ fn verify_vendored_sources(manifest_dir: &Path, require_libkrunfw: bool) {
     }
 }
 
+fn verify_pyelftools_available() {
+    let status = Command::new("python3")
+        .args(["-c", "import elftools.elf.elffile"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    match status {
+        Ok(status) if status.success() => return,
+        Ok(_) => {
+            eprintln!("ERROR: libkrunfw source build requires Python module pyelftools");
+            eprintln!();
+            eprintln!("Install it with your system package manager, for example:");
+            eprintln!("  Debian/Ubuntu: sudo apt-get install python3-pyelftools");
+            eprintln!("  Fedora:        sudo dnf install python3-pyelftools");
+            eprintln!();
+            eprintln!("Or install it for this Python interpreter:");
+            eprintln!("  python3 -m pip install pyelftools");
+            std::process::exit(1);
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            eprintln!("ERROR: libkrunfw source build requires python3 (not found in PATH)");
+            eprintln!("Install Python 3 and then install pyelftools:");
+            eprintln!("  python3 -m pip install pyelftools");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("ERROR: failed to run python3 to check for pyelftools: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 // ── Fetcher: download, verify, extract ───────────────────────────────────────
 
 struct Fetcher;
@@ -272,125 +305,6 @@ fn build_with_make(
     install_cmd.args(extra_make_args);
     install_cmd.arg("install");
     run_command(&mut install_cmd, &format!("make install {}", lib_name));
-}
-
-// ── LibBuilder: libkrun build operations ─────────────────────────────────────
-
-struct LibBuilder;
-
-impl LibBuilder {
-    /// Builds libkrun as a static library.
-    ///
-    /// The init binary is built automatically by the `devices` crate's build.rs
-    /// using the `CC_LINUX` environment variable.
-    ///
-    /// Link directives and DEP var metadata are emitted by the caller
-    /// (platform `build()` functions) so they can be gated on features.
-    pub fn build(
-        libkrun_src: &Path,
-        libkrun_install: &Path,
-        libkrunfw_install: &Path,
-        env_overrides: &HashMap<String, String>,
-        cc_linux: Option<&str>,
-    ) {
-        Self::build_libkrun_static(
-            libkrun_src,
-            libkrun_install,
-            libkrunfw_install,
-            env_overrides,
-            cc_linux,
-        );
-    }
-
-    /// Builds libkrun as a static library using `cargo rustc --crate-type staticlib`.
-    ///
-    /// This overrides libkrun's Cargo.toml crate-type (cdylib) at the command line,
-    /// producing libkrun.a without modifying the vendored source code.
-    fn build_libkrun_static(
-        libkrun_src: &Path,
-        install_dir: &Path,
-        libkrunfw_install: &Path,
-        env_overrides: &HashMap<String, String>,
-        cc_linux: Option<&str>,
-    ) {
-        println!("cargo:warning=Building libkrun as static library...");
-
-        let lib_dir = install_dir.join(LIB_DIR);
-        fs::create_dir_all(&lib_dir)
-            .unwrap_or_else(|e| panic!("Failed to create lib directory: {}", e));
-
-        // Read the outer build's TARGET to propagate cross-compilation (e.g., musl)
-        let target = env::var("TARGET").ok();
-
-        let mut cmd = Command::new("cargo");
-        cmd.args([
-            "rustc",
-            "-p",
-            "libkrun",
-            "--release",
-            "--crate-type",
-            "staticlib",
-        ]);
-        // Features must be forwarded to internal dependency crates explicitly when
-        // using -p, since libkrun's Cargo.toml doesn't propagate them (net = [], blk = []).
-        // Without -p, workspace-level feature unification handles this automatically,
-        // but cargo rustc -p requires explicit dep/feature syntax.
-        cmd.args([
-            "--features",
-            "net,blk,vmm/net,vmm/blk,devices/net,devices/blk",
-        ]);
-
-        // Propagate target for cross-compilation (e.g., x86_64-unknown-linux-musl)
-        if let Some(ref target) = target {
-            cmd.args(["--target", target]);
-        }
-
-        cmd.current_dir(libkrun_src);
-        cmd.env(
-            "PKG_CONFIG_PATH",
-            format!("{}/{}/pkgconfig", libkrunfw_install.display(), LIB_DIR),
-        );
-        cmd.stdout(Stdio::inherit());
-        cmd.stderr(Stdio::inherit());
-
-        // Pass CC_LINUX for init binary cross-compilation (used by devices/build.rs)
-        if let Some(cc_linux) = cc_linux {
-            cmd.env("CC_LINUX", cc_linux);
-        }
-
-        // Apply environment overrides (e.g., PATH with llvm/lld directories)
-        for (key, value) in env_overrides {
-            cmd.env(key, value);
-        }
-
-        // Prevent outer RUSTFLAGS from leaking into vendored libkrun build.
-        // CI tools (e.g., actions-rust-lang/setup-rust-toolchain) set RUSTFLAGS=-D warnings,
-        // which would promote warnings in vendored code to errors.
-        cmd.env_remove("RUSTFLAGS");
-        cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
-
-        run_command(&mut cmd, "cargo rustc (libkrun staticlib)");
-
-        // Determine output path (differs when --target is specified)
-        let output_dir = if let Some(ref target) = target {
-            libkrun_src.join(format!("target/{}/release", target))
-        } else {
-            libkrun_src.join("target/release")
-        };
-
-        let src = output_dir.join("libkrun.a");
-        let dst = lib_dir.join("libkrun.a");
-        fs::copy(&src, &dst).unwrap_or_else(|e| {
-            panic!(
-                "Failed to copy libkrun.a from {} to {}: {}",
-                src.display(),
-                dst.display(),
-                e
-            )
-        });
-
-        println!("cargo:warning=Built static libkrun at {}", dst.display());
-    }
 }
 
 // ── LibFixup: post-build library fixup ───────────────────────────────────────
@@ -789,23 +703,18 @@ impl MacToolchain {
 
 // ── Platform build orchestration ─────────────────────────────────────────────
 
-/// macOS: Build libkrunfw and/or libkrun based on enabled features.
+/// macOS: Build libkrunfw runtime sidecars based on enabled features.
 ///
-/// - `krunfw`: Download prebuilt kernel.c, compile to .dylib (fast)
-/// - `krun`:   Build init binary + libkrun.a static library (expensive)
-///
-/// `krun` implies libkrunfw download (needed for pkgconfig during build).
+/// Vendored libkrun is linked by Cargo as a Rust dependency; this build script
+/// only prepares libkrunfw artifacts for runtime bundling.
 #[cfg(target_os = "macos")]
 fn build() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     let libkrunfw_install = out_dir.join("libkrunfw");
-    let libkrun_install = out_dir.join("libkrun");
     let libkrunfw_lib = libkrunfw_install.join(LIB_DIR);
 
-    // Step 1: Download and build libkrunfw dylib.
-    // Needed for both features: krunfw bundles the dylib,
-    // krun needs libkrunfw's pkgconfig for compilation.
+    // Download and build libkrunfw dylib.
     println!("cargo:warning=Building libkrunfw for macOS...");
     let libkrunfw_src = download_libkrunfw_prebuilt(&out_dir);
     build_with_make(
@@ -818,66 +727,127 @@ fn build() {
     LibFixup::fix(&libkrunfw_lib, "libkrunfw")
         .unwrap_or_else(|e| panic!("Failed to fix libkrunfw: {}", e));
 
-    // Expose libkrunfw library directory for downstream bundling
+    // Expose libkrunfw library directory for downstream bundling.
     println!("cargo:LIBKRUNFW_BOXLITE_DEP={}", libkrunfw_lib.display());
 
-    // Step 2: Build libkrun.a (expensive — only when krun feature is enabled)
     if cfg!(feature = "krun") {
-        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        println!("cargo:warning=Building libkrun for macOS (static)...");
-        verify_vendored_sources(&manifest_dir, false);
-
-        let libkrun_src = manifest_dir.join("vendor/libkrun");
-        let (cc_linux_value, env_overrides) =
-            MacToolchain::resolve(&libkrun_src).unwrap_or_else(|e| panic!("{}", e));
-        LibBuilder::build(
-            &libkrun_src,
-            &libkrun_install,
-            &libkrunfw_install,
-            &env_overrides,
-            Some(&cc_linux_value),
-        );
-
-        let libkrun_lib = libkrun_install.join(LIB_DIR);
-        println!("cargo:LIBKRUN_BOXLITE_DEP={}", libkrun_lib.display());
-
-        println!("cargo:rustc-link-search=native={}", libkrun_lib.display());
-        println!("cargo:rustc-link-lib=static=krun");
-        println!("cargo:rustc-link-lib=framework=Hypervisor");
+        println!("cargo:warning=Linking vendored libkrun Rust dependency");
     }
 }
 
-/// Linux: Build libkrunfw and/or libkrun based on enabled features.
+/// Linux: Build libkrunfw runtime sidecars based on enabled features.
 ///
-/// - `krunfw`: Download pre-compiled .so (fast) or build from source
-/// - `krun`:   Build init binary + libkrun.a static library (expensive)
-///
-/// `krun` implies libkrunfw download (needed for pkgconfig during build).
+/// Vendored libkrun is linked by Cargo as a Rust dependency; this build script
+/// only prepares libkrunfw artifacts for runtime bundling.
 #[cfg(target_os = "linux")]
 fn build() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     let libkrunfw_install = out_dir.join("libkrunfw");
-    let libkrun_install = out_dir.join("libkrun");
     let libkrunfw_lib_dir = libkrunfw_install.join(LIB_DIR);
 
-    // Step 1: Download/build libkrunfw.
-    // Needed for both features: krunfw bundles the .so,
-    // krun needs libkrunfw's pkgconfig for compilation.
-    let build_from_source = env::var("BOXLITE_BUILD_LIBKRUNFW").is_ok();
-
-    if build_from_source {
+    // Download/build libkrunfw. The shared library is enough for libkrun's
+    // dlopen fallback; krunfw-kernel additionally exposes libkrunfw.bin for the
+    // runtime env-enabled krun_set_kernel path.
+    let build_krunfw_kernel = cfg!(feature = "krunfw-kernel");
+    let build_kernel_with_llvm = cfg!(feature = "krunfw-kernel-llvm");
+    if build_krunfw_kernel {
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        println!("cargo:warning=Building libkrunfw from source (BOXLITE_BUILD_LIBKRUNFW=1)");
+        if build_kernel_with_llvm {
+            println!(
+                "cargo:warning=Building libkrunfw from source (krunfw-kernel-llvm feature, LLVM=1)"
+            );
+        } else {
+            println!("cargo:warning=Building libkrunfw from source (krunfw-kernel feature)");
+        }
         verify_vendored_sources(&manifest_dir, true);
+        verify_pyelftools_available();
 
         let libkrunfw_src = manifest_dir.join("vendor/libkrunfw");
+        let libkrunfw_env = if build_kernel_with_llvm {
+            HashMap::from([
+                ("LLVM".to_string(), "1".to_string()),
+                ("CC".to_string(), "clang".to_string()),
+                ("STRIP".to_string(), "llvm-strip".to_string()),
+            ])
+        } else {
+            HashMap::new()
+        };
+        let libkrunfw_make_args = if build_kernel_with_llvm {
+            vec![
+                "LLVM=1".to_string(),
+                "CC=clang".to_string(),
+                "STRIP=llvm-strip".to_string(),
+            ]
+        } else {
+            Vec::new()
+        };
         build_with_make(
             &libkrunfw_src,
             &libkrunfw_install,
             "libkrunfw",
-            &HashMap::new(),
-            &[],
+            &libkrunfw_env,
+            &libkrunfw_make_args,
+        );
+
+        let kernel_binary = match env::var("CARGO_CFG_TARGET_ARCH").ok().as_deref() {
+            Some("x86_64") => "vmlinux",
+            Some("aarch64") => "arch/arm64/boot/Image",
+            Some("riscv64") => "arch/riscv/boot/Image",
+            Some(arch) => panic!("Unsupported libkrunfw kernel target architecture: {arch}"),
+            None => panic!("CARGO_CFG_TARGET_ARCH is not set"),
+        };
+        let kernel_src = fs::read_dir(&libkrunfw_src)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Failed to read libkrunfw source directory {}: {}",
+                    libkrunfw_src.display(),
+                    e
+                )
+            })
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_dir()
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.starts_with("linux-"))
+            })
+            .map(|path| path.join(kernel_binary))
+            .filter(|path| path.is_file())
+            .map(|path| {
+                let modified = path
+                    .metadata()
+                    .and_then(|metadata| metadata.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                (modified, path)
+            })
+            .max_by_key(|(modified, _)| *modified)
+            .map(|(_, path)| path)
+            .unwrap_or_else(|| {
+                panic!(
+                    "krunfw-kernel feature expected a kernel artifact matching linux-*/{} under {}",
+                    kernel_binary,
+                    libkrunfw_src.display()
+                )
+            });
+
+        let kernel_name = "libkrunfw.bin";
+        let kernel_dest = out_dir.join(kernel_name);
+        fs::copy(&kernel_src, &kernel_dest).unwrap_or_else(|e| {
+            panic!(
+                "Failed to copy krunfw kernel artifact {} -> {}: {}",
+                kernel_src.display(),
+                kernel_dest.display(),
+                e
+            )
+        });
+
+        println!("cargo:KERNEL_BOXLITE_DEP={}", kernel_dest.display());
+        println!(
+            "cargo:warning=Exposed krunfw kernel artifact: {}",
+            kernel_dest.display()
         );
     } else {
         println!("cargo:warning=Downloading pre-compiled libkrunfw...");
@@ -893,26 +863,10 @@ fn build() {
         libkrunfw_lib_dir.display()
     );
 
-    // Step 2: Build libkrun.a (expensive — only when krun feature is enabled)
+    // libkrun itself is linked by Cargo as a Rust dependency; build.rs only
+    // prepares libkrunfw sidecar artifacts for runtime bundling.
     if cfg!(feature = "krun") {
-        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        println!("cargo:warning=Building libkrun for Linux (static)...");
-        verify_vendored_sources(&manifest_dir, false);
-
-        let libkrun_src = manifest_dir.join("vendor/libkrun");
-        LibBuilder::build(
-            &libkrun_src,
-            &libkrun_install,
-            &libkrunfw_install,
-            &HashMap::new(),
-            None,
-        );
-
-        let libkrun_lib = libkrun_install.join(LIB_DIR);
-        println!("cargo:LIBKRUN_BOXLITE_DEP={}", libkrun_lib.display());
-
-        println!("cargo:rustc-link-search=native={}", libkrun_lib.display());
-        println!("cargo:rustc-link-lib=static=krun");
+        println!("cargo:warning=Linking vendored libkrun Rust dependency");
     }
 }
 
@@ -940,13 +894,12 @@ fn main() {
     // Check for stub mode (for CI linting or crates.io install)
     if env::var("BOXLITE_DEPS_STUB").is_ok() {
         println!("cargo:warning=BOXLITE_DEPS_STUB mode: skipping libkrun build");
-        println!("cargo:LIBKRUN_BOXLITE_DEP=/nonexistent");
         println!("cargo:LIBKRUNFW_BOXLITE_DEP=/nonexistent");
         return;
     }
 
-    // Skip native builds when no build features are enabled.
-    // FFI declarations in src/lib.rs remain available but nothing gets built/linked.
+    // Skip native artifact preparation when no build features are enabled.
+    // The crate can still provide constants without libkrun/libkrunfw artifacts.
     let need_build = cfg!(feature = "krunfw") || cfg!(feature = "krun");
     if !need_build {
         println!("cargo:warning=libkrun-sys: no build features enabled, skipping native builds");

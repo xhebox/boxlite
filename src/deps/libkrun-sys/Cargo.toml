@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2021"
 authors.workspace = true
 license.workspace = true
-description = "FFI bindings to libkrun and libkrunfw"
+description = "BoxLite facade for libkrun and libkrunfw runtime artifacts"
 repository = "https://github.com/boxlite-ai/boxlite"
 
 links = "krun"
@@ -16,8 +16,11 @@ num_cpus = "1.16"
 
 [dependencies]
 libc = "0.2"
+krun = { package = "libkrun", path = "vendor/libkrun/src/libkrun", optional = true, default-features = false, features = ["net", "blk"] }
 
 [features]
 default = []
-krun = []      # Build init binary + libkrun.a + emit link directives (was: link-static + build-libkrun)
-krunfw = []    # Download/build libkrunfw.dylib/.so (was: build-libkrunfw)
+krun = ["dep:krun"] # Link vendored libkrun as a Rust dependency
+krunfw = []    # Provide libkrunfw shared library for runtime bundling; Linux downloads prebuilt .so by default
+krunfw-kernel = ["krunfw"] # Build libkrunfw from source and expose its raw kernel artifact
+krunfw-kernel-llvm = ["krunfw-kernel"] # Use LLVM=1 for libkrunfw kernel builds

@@ -147,6 +147,15 @@ impl Sandbox for BwrapSandbox {
         if let Ok(rust_backtrace) = std::env::var("RUST_BACKTRACE") {
             bwrap_cmd.setenv("RUST_BACKTRACE", rust_backtrace);
         }
+        for name in [
+            "BOXLITE_KRUNFW_EXTERNAL_KERNEL",
+            "BOXLITE_KRUNFW_KERNEL_PATH",
+            "BOXLITE_KRUNFW_KERNEL_FORMAT",
+        ] {
+            if let Ok(value) = std::env::var(name) {
+                bwrap_cmd.setenv(name, value);
+            }
+        }
 
         bwrap_cmd.chdir("/");
 

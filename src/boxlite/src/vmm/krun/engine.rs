@@ -4,6 +4,12 @@ use super::context::KrunContext;
 use crate::runtime::constants::network;
 use crate::vmm::{InstanceSpec, Vmm, VmmConfig, VmmInstance, engine::VmmInstanceImpl};
 use boxlite_shared::errors::{BoxliteError, BoxliteResult};
+use std::path::PathBuf;
+
+const LIBKRUNFW_KERNEL_FILE: &str = "libkrunfw.bin";
+const ENV_KRUNFW_EXTERNAL_KERNEL: &str = "BOXLITE_KRUNFW_EXTERNAL_KERNEL";
+const ENV_KRUNFW_KERNEL_PATH: &str = "BOXLITE_KRUNFW_KERNEL_PATH";
+const ENV_KRUNFW_KERNEL_FORMAT: &str = "BOXLITE_KRUNFW_KERNEL_FORMAT";
 
 /// Libkrun-specific VMM instance implementation.
 struct KrunVmmInstance {
@@ -166,6 +172,146 @@ impl Krun {
         guest_args
     }
 
+    fn krunfw_kernel_env() -> BoxliteResult<Option<bool>> {
+        match std::env::var(ENV_KRUNFW_EXTERNAL_KERNEL) {
+            Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+                "" | "auto" => Ok(None),
+                "1" | "true" | "on" | "yes" => Ok(Some(true)),
+                "0" | "false" | "off" | "no" => Ok(Some(false)),
+                other => Err(BoxliteError::Config(format!(
+                    "unsupported {ENV_KRUNFW_EXTERNAL_KERNEL}={other}; use 1/true/on/yes, 0/false/off/no, or auto"
+                ))),
+            },
+            Err(std::env::VarError::NotPresent) => Ok(None),
+            Err(std::env::VarError::NotUnicode(_)) => Err(BoxliteError::Config(format!(
+                "{ENV_KRUNFW_EXTERNAL_KERNEL} must be valid Unicode"
+            ))),
+        }
+    }
+
+    fn parse_krunfw_kernel_format(value: &str) -> BoxliteResult<u32> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "raw" => Ok(libkrun_sys::KRUN_KERNEL_FORMAT_RAW),
+            "elf" => Ok(libkrun_sys::KRUN_KERNEL_FORMAT_ELF),
+            "pe-gz" => Ok(libkrun_sys::KRUN_KERNEL_FORMAT_PE_GZ),
+            "image-bz2" => Ok(libkrun_sys::KRUN_KERNEL_FORMAT_IMAGE_BZ2),
+            "image-gz" => Ok(libkrun_sys::KRUN_KERNEL_FORMAT_IMAGE_GZ),
+            "image-zstd" => Ok(libkrun_sys::KRUN_KERNEL_FORMAT_IMAGE_ZSTD),
+            other => Err(BoxliteError::Config(format!(
+                "unsupported {ENV_KRUNFW_KERNEL_FORMAT}={other}; use raw, elf, pe-gz, image-bz2, image-gz, or image-zstd"
+            ))),
+        }
+    }
+
+    fn default_krunfw_kernel_format() -> u32 {
+        #[cfg(target_arch = "x86_64")]
+        {
+            libkrun_sys::KRUN_KERNEL_FORMAT_ELF
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            libkrun_sys::KRUN_KERNEL_FORMAT_RAW
+        }
+    }
+
+    fn krunfw_kernel_format() -> BoxliteResult<u32> {
+        match std::env::var(ENV_KRUNFW_KERNEL_FORMAT) {
+            Ok(value) => Self::parse_krunfw_kernel_format(&value),
+            Err(std::env::VarError::NotPresent) => Ok(Self::default_krunfw_kernel_format()),
+            Err(std::env::VarError::NotUnicode(_)) => Err(BoxliteError::Config(format!(
+                "{ENV_KRUNFW_KERNEL_FORMAT} must be valid Unicode"
+            ))),
+        }
+    }
+
+    fn find_krunfw_kernel_path() -> BoxliteResult<Option<PathBuf>> {
+        let forced = Self::krunfw_kernel_env()?;
+        if forced == Some(false) {
+            return Ok(None);
+        }
+
+        if let Some(path) = match std::env::var(ENV_KRUNFW_KERNEL_PATH) {
+            Ok(path) => Some(path),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(std::env::VarError::NotUnicode(_)) => {
+                return Err(BoxliteError::Config(format!(
+                    "{ENV_KRUNFW_KERNEL_PATH} must be valid Unicode"
+                )));
+            }
+        } {
+            if path.is_empty() {
+                return Err(BoxliteError::Config(format!(
+                    "{ENV_KRUNFW_KERNEL_PATH} must not be empty"
+                )));
+            }
+
+            let path = PathBuf::from(path);
+            let metadata = std::fs::metadata(&path).map_err(|e| {
+                BoxliteError::Config(format!(
+                    "failed to access {ENV_KRUNFW_KERNEL_PATH}={}: {e}",
+                    path.display()
+                ))
+            })?;
+            if metadata.is_file() {
+                return Ok(Some(path));
+            }
+            return Err(BoxliteError::Config(format!(
+                "{ENV_KRUNFW_KERNEL_PATH} must point to a regular file: {}",
+                path.display()
+            )));
+        }
+
+        let mut candidates = Vec::new();
+
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                candidates.push(dir.join(LIBKRUNFW_KERNEL_FILE));
+            }
+        }
+
+        if let Ok(runtime_dir) = std::env::var("BOXLITE_RUNTIME_DIR") {
+            if !runtime_dir.is_empty() {
+                candidates.extend(
+                    std::env::split_paths(&runtime_dir).map(|p| p.join(LIBKRUNFW_KERNEL_FILE)),
+                );
+            }
+        }
+
+        for candidate in candidates {
+            if candidate.is_file() {
+                return Ok(Some(candidate));
+            }
+        }
+
+        if forced == Some(true) {
+            return Err(BoxliteError::Config(format!(
+                "{ENV_KRUNFW_EXTERNAL_KERNEL} is enabled, but no external kernel was found; set {ENV_KRUNFW_KERNEL_PATH} or place {LIBKRUNFW_KERNEL_FILE} next to boxlite-shim or in BOXLITE_RUNTIME_DIR"
+            )));
+        }
+
+        Ok(None)
+    }
+    fn configure_krunfw_kernel(ctx: &KrunContext) -> BoxliteResult<()> {
+        let Some(kernel_path) = Self::find_krunfw_kernel_path()? else {
+            return Ok(());
+        };
+
+        let kernel_format = Self::krunfw_kernel_format()?;
+        let kernel_path_str = kernel_path.to_str().ok_or_else(|| {
+            BoxliteError::Config(format!(
+                "krunfw kernel path contains invalid UTF-8: {}",
+                kernel_path.display()
+            ))
+        })?;
+        tracing::info!(
+            kernel = %kernel_path.display(),
+            format = kernel_format,
+            "Configuring libkrun with krunfw kernel"
+        );
+        unsafe { ctx.set_kernel(kernel_path_str, kernel_format, None, None) }
+    }
+
     fn set_entrypoint(config: &InstanceSpec, ctx: &mut KrunContext) -> Result<(), BoxliteError> {
         // Prepare entrypoint - the VM runs the guest agent which will:
         // 1. Mount virtiofs shares
@@ -238,6 +384,7 @@ impl Vmm for Krun {
             tracing::debug!("Creating libkrun context");
             let mut ctx = KrunContext::create()?;
 
+            Self::configure_krunfw_kernel(&ctx)?;
             tracing::debug!("Setting VM config: 4 CPUs, 4096MB memory");
             // Configure VM like chroot_vm example: 4 CPUs and 4096MB memory
             ctx.set_vm_config(config.cpus.unwrap_or(4), config.memory_mib.unwrap_or(4096))?;
@@ -473,5 +620,45 @@ impl Vmm for Krun {
             probe: crate::system_check::hypervisor_probe(),
         };
         Ok(VmmInstance::new(Box::new(instance)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_explicit_krunfw_kernel_formats() {
+        assert_eq!(
+            Krun::parse_krunfw_kernel_format("raw").unwrap(),
+            libkrun_sys::KRUN_KERNEL_FORMAT_RAW
+        );
+        assert_eq!(
+            Krun::parse_krunfw_kernel_format("elf").unwrap(),
+            libkrun_sys::KRUN_KERNEL_FORMAT_ELF
+        );
+        assert_eq!(
+            Krun::parse_krunfw_kernel_format("pe-gz").unwrap(),
+            libkrun_sys::KRUN_KERNEL_FORMAT_PE_GZ
+        );
+        assert_eq!(
+            Krun::parse_krunfw_kernel_format("image-bz2").unwrap(),
+            libkrun_sys::KRUN_KERNEL_FORMAT_IMAGE_BZ2
+        );
+        assert_eq!(
+            Krun::parse_krunfw_kernel_format("image-gz").unwrap(),
+            libkrun_sys::KRUN_KERNEL_FORMAT_IMAGE_GZ
+        );
+        assert_eq!(
+            Krun::parse_krunfw_kernel_format("image-zstd").unwrap(),
+            libkrun_sys::KRUN_KERNEL_FORMAT_IMAGE_ZSTD
+        );
+    }
+
+    #[test]
+    fn rejects_implicit_krunfw_kernel_formats() {
+        for value in ["", "auto", "pegz", "vmlinuz", "bzimage"] {
+            assert!(Krun::parse_krunfw_kernel_format(value).is_err());
+        }
     }
 }

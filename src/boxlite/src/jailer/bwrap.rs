@@ -633,6 +633,15 @@ pub fn build_shim_command(
     if let Ok(rust_backtrace) = std::env::var("RUST_BACKTRACE") {
         bwrap.setenv("RUST_BACKTRACE", rust_backtrace);
     }
+    for name in [
+        "BOXLITE_KRUNFW_EXTERNAL_KERNEL",
+        "BOXLITE_KRUNFW_KERNEL_PATH",
+        "BOXLITE_KRUNFW_KERNEL_FORMAT",
+    ] {
+        if let Ok(value) = std::env::var(name) {
+            bwrap.setenv(name, value);
+        }
+    }
 
     // Set working directory
     bwrap.chdir("/");

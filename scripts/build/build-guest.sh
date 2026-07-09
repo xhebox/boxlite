@@ -78,7 +78,20 @@ print_header "Building boxlite-guest on $OS..."
 check_prerequisites() {
     print_section "Checking prerequisites..."
     require_command "rustc" "Run: scripts/setup/setup-macos.sh (or setup-ubuntu.sh)"
-    require_musl
+
+    local rustc_host
+    rustc_host=$(rustc -vV | while read -r key value; do
+        if [ "$key" = "host:" ]; then
+            printf '%s\n' "$value"
+            break
+        fi
+    done)
+    if [[ "$rustc_host" == *-musl ]]; then
+        print_info "Using native musl Rust toolchain: $rustc_host"
+    else
+        require_musl
+    fi
+
     print_success "All prerequisites satisfied"
     echo ""
 }
@@ -87,12 +100,27 @@ check_prerequisites() {
 setup_rust_target() {
     source "$SCRIPT_DIR/util.sh"
     print_step "Checking Rust target $GUEST_TARGET... "
-    if rustup target list | grep -q "$GUEST_TARGET (installed)"; then
-        print_success "Already installed"
+    local rustc_host
+    rustc_host=$(rustc -vV | while read -r key value; do
+        if [ "$key" = "host:" ]; then
+            printf '%s\n' "$value"
+            break
+        fi
+    done)
+
+    if [ "$rustc_host" = "$GUEST_TARGET" ]; then
+        print_success "Using native host target"
+    elif command -v rustup >/dev/null 2>&1; then
+        if rustup target list | grep -q "$GUEST_TARGET (installed)"; then
+            print_success "Already installed"
+        else
+            echo -e "${YELLOW}Adding...${NC}"
+            rustup target add "$GUEST_TARGET"
+            print_success "Target added"
+        fi
     else
-        echo -e "${YELLOW}Adding...${NC}"
-        rustup target add "$GUEST_TARGET"
-        print_success "Target added"
+        print_error "rustup not found and rustc host is $rustc_host, not $GUEST_TARGET"
+        exit 1
     fi
 }
 
@@ -126,30 +154,35 @@ build_guest_binary() {
     source "$SCRIPT_BUILD_DIR/build-libseccomp.sh"
     ensure_libseccomp_for_target "$GUEST_TARGET"
 
-    cargo build $build_flag --target "$GUEST_TARGET" -p boxlite-guest
+    (cd "$PROJECT_ROOT/src/guest" && cargo build $build_flag --target "$GUEST_TARGET" -p boxlite-guest)
 
     # Verify guest binary is statically linked
     local guest_binary="$PROJECT_ROOT/target/$GUEST_TARGET/$PROFILE/boxlite-guest"
     local file_output
     file_output=$(file "$guest_binary")
-    if echo "$file_output" | grep -q "dynamically linked"; then 
-        local musl_arch
-        musl_arch=$(echo "$GUEST_TARGET" | cut -d'-' -f1)
-        local musl_gcc="${musl_arch}-linux-musl-gcc"
-
-        print_error "boxlite-guest is dynamically linked, but must be statically linked"
-        echo ""
-        echo "❌ Error: The boxlite-guest binary must be statically linked."
-        echo ""
-        echo "The guest binary at $guest_binary is dynamically linked, which means"
-        echo "it depends on shared libraries that won't be available inside the VM."
-        echo ""
-        echo "🔧 To fix this issue:"
-        echo "  Check your $musl_gcc version:"
-        echo "  $ $musl_gcc --version"
-        echo "  Verify whether your C compiler is a gnu-gcc wrapper instead of true musl-gcc"
-        echo ""
-        exit 1
+    if echo "$file_output" | grep -q "dynamically linked"; then
+        if command -v readelf >/dev/null 2>&1 \
+            && ! readelf -d "$guest_binary" | grep -q "(NEEDED)" \
+            && ! readelf -l "$guest_binary" | grep -q "INTERP"; then
+            print_info "boxlite-guest is static PIE (no dynamic dependencies or interpreter)"
+        else
+            local musl_arch
+            musl_arch=$(echo "$GUEST_TARGET" | cut -d'-' -f1)
+            local musl_gcc="${musl_arch}-linux-musl-gcc"
+            print_error "boxlite-guest is dynamically linked, but must be statically linked"
+            echo ""
+            echo "❌ Error: The boxlite-guest binary must be statically linked."
+            echo ""
+            echo "The guest binary at $guest_binary is dynamically linked, which means"
+            echo "it depends on shared libraries that won't be available inside the VM."
+            echo ""
+            echo "🔧 To fix this issue:"
+            echo "  Check your $musl_gcc version:"
+            echo "  $ $musl_gcc --version"
+            echo "  Verify whether your C compiler is a gnu-gcc wrapper instead of true musl-gcc"
+            echo ""
+            exit 1
+        fi
     fi
 }
 

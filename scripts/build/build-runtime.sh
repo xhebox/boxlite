@@ -229,10 +229,16 @@ collect_libraries() {
         build_flag="--release"
     fi
 
+    local feature_args
+    feature_args=$(boxlite_cargo_feature_args)
+    if [ -n "$feature_args" ]; then
+        echo "🧩 Cargo features: $feature_args"
+    fi
+
     # Build boxlite crate and capture the exact OUT_DIR from cargo's JSON output
     # This is deterministic - no guessing based on directory names or timestamps
     local runtime_src=""
-    runtime_src=$(cargo build $build_flag --lib -p boxlite --message-format=json 2>/dev/null | \
+    runtime_src=$(cargo build $build_flag $feature_args --lib -p boxlite --message-format=json 2>/dev/null | \
         grep -o '"out_dir":"[^"]*"' | \
         tail -1 | \
         cut -d'"' -f4)

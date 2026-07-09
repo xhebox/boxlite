@@ -76,17 +76,23 @@ impl RuntimeBinaryFinder {
     pub fn from_env() -> Self {
         let mut builder = Self::builder();
 
+        let explicit_runtime = std::env::var("BOXLITE_RUNTIME_DIR")
+            .ok()
+            .filter(|value| !value.is_empty());
+
         // 1. Explicit override (highest priority)
-        if let Ok(runtime_dir) = std::env::var("BOXLITE_RUNTIME_DIR") {
-            for path in runtime_dir.split(':').filter(|s| !s.is_empty()) {
+        if let Some(runtime_dir) = &explicit_runtime {
+            for path in std::env::split_paths(runtime_dir) {
                 builder = builder.with_path(path);
             }
         }
 
         // 2. Embedded runtime cache (self-contained SDK packaging)
         #[cfg(feature = "embedded-runtime")]
-        if let Some(runtime) = crate::runtime::embedded::EmbeddedRuntime::get() {
-            builder = builder.with_path(runtime.dir());
+        if explicit_runtime.is_none() {
+            if let Some(runtime) = crate::runtime::embedded::EmbeddedRuntime::get() {
+                builder = builder.with_path(runtime.dir());
+            }
         }
 
         // 3. Library path environment variables

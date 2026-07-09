@@ -148,6 +148,15 @@ impl<'a> ShimSpawner<'a> {
         if let Ok(rust_backtrace) = std::env::var("RUST_BACKTRACE") {
             cmd.env("RUST_BACKTRACE", rust_backtrace);
         }
+        for name in [
+            "BOXLITE_KRUNFW_EXTERNAL_KERNEL",
+            "BOXLITE_KRUNFW_KERNEL_PATH",
+            "BOXLITE_KRUNFW_KERNEL_FORMAT",
+        ] {
+            if let Ok(value) = std::env::var(name) {
+                cmd.env(name, value);
+            }
+        }
 
         // Keep temp artifacts inside the box-scoped allowlist when using the
         // built-in macOS seatbelt profile. libkrun may create a transient

@@ -117,13 +117,13 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
         println!("cargo:rustc-link-lib=framework=Security");
     }
-    // On Linux, force static linking of libresolv to ensure the shim binary
+    // On glibc Linux, force static linking of libresolv to ensure the shim binary
     // remains fully static when built with crt-static. Without this, the linker
-    // picks libresolv.so (dynamic), making the binary dynamically linked and
+    // can pick libresolv.so (dynamic), making the binary dynamically linked and
     // causing SIGSEGV on TLS access (fs:[0x28]) on some VMs.
-    // When building with --target, Rust may not include the system library
-    // paths, so we add them explicitly for the linker to find libresolv.a.
-    #[cfg(target_os = "linux")]
+    // Do not add these glibc system paths for musl targets; they can make the
+    // musl static link pick /usr/lib64/libc.so and fail.
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     {
         let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
         // Debian/Ubuntu: /usr/lib/<triple>

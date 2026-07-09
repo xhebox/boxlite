@@ -9,8 +9,8 @@
 #   --profile PROFILE   Build profile: release or debug (default: release)
 #
 # Note: On macOS, the binary is automatically signed with hypervisor entitlements
-# Note: On Linux, the binary is statically linked using glibc (crt-static).
-#       Go c-archive is incompatible with musl TLS, so we use glibc static linking instead.
+# Note: On Linux, the binary is statically linked for the active host Rust
+#       toolchain. glibc hosts produce static glibc; musl hosts produce static musl.
 
 set -e
 
@@ -83,22 +83,37 @@ build_shim_binary() {
         build_flag="--release"
     fi
 
+    local feature_args
+    feature_args=$(boxlite_cargo_feature_args)
+    if [ -n "$feature_args" ]; then
+        echo "🧩 Cargo features: $feature_args"
+    fi
     if [ "$OS" = "linux" ]; then
-        # Go c-archive crashes with musl TLS; use glibc + crt-static instead.
-        # relocation-model=static avoids static-pie which is incompatible with Go c-archive relocations.
-        # --target is required so RUSTFLAGS (crt-static, relocation-model) don't leak into
-        # proc-macro compilation — proc-macros are dylibs and can't use crt-static.
-        # The downside is cargo outputs to target/<triple>/$PROFILE/ instead of target/$PROFILE/,
-        # so we copy the binary back to the canonical path after building.
+        # Build from src/shim so Cargo loads src/shim/.cargo/config.toml, where
+        # shim-only Linux rustflags live. Use an explicit target so proc-macros
+        # stay on the host while the shim binary gets target rustflags.
         local arch
         arch=$(uname -m)
-        local target="${arch}-unknown-linux-gnu"
-        export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static -C link-arg=-Wl,-z,stack-size=2097152 -C link-arg=-Wl,--allow-multiple-definition"
-        echo "🎯 Static glibc binary (crt-static + relocation-model=static)"
-        cargo build $build_flag -p boxlite-shim --target "$target"
+        local rustc_host
+        rustc_host=$(rustc -vV | while read -r key value; do
+            if [ "$key" = "host:" ]; then
+                printf '%s\n' "$value"
+                break
+            fi
+        done)
+
+        local target
+        if [[ "$rustc_host" == *-musl ]]; then
+            target="${arch}-unknown-linux-musl"
+        else
+            target="${arch}-unknown-linux-gnu"
+        fi
+
+        echo "🎯 Static binary target: $target (crt-static + relocation-model=static)"
+        (cd "$PROJECT_ROOT/src/shim" && cargo build $build_flag $feature_args -p boxlite-shim --target "$target")
         cp "$PROJECT_ROOT/target/$target/$PROFILE/boxlite-shim" "$SHIM_BINARY_PATH"
     else
-        cargo build $build_flag -p boxlite-shim
+        cargo build $build_flag $feature_args -p boxlite-shim
     fi
 }
 

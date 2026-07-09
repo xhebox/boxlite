@@ -958,12 +958,20 @@ impl EmbeddedManifest {
     /// Find pre-built boxlite-shim binary for the given build profile.
     ///
     /// Search order:
-    /// 1. Native: `target/{profile}/boxlite-shim` (macOS)
-    /// 2. Linux gnu: `target/{arch}-unknown-linux-gnu/{profile}/boxlite-shim` (static glibc)
+    /// 1. Current Cargo target: `target/{TARGET}/{profile}/boxlite-shim`
+    /// 2. Native: `target/{profile}/boxlite-shim` (macOS / native builds)
+    /// 3. Linux gnu fallback: `target/{arch}-unknown-linux-gnu/{profile}/boxlite-shim`
     fn find_prebuilt_shim(workspace_root: &Path, profile: &str) -> Option<PathBuf> {
         let target_dir = workspace_root.join("target");
 
-        // Native path (macOS)
+        if let Ok(target) = env::var("TARGET") {
+            let target_path = target_dir.join(target).join(profile).join("boxlite-shim");
+            if target_path.is_file() {
+                return Some(target_path);
+            }
+        }
+
+        // Native path (macOS / native cargo builds).
         let native = target_dir.join(profile).join("boxlite-shim");
         if native.is_file() {
             return Some(native);
@@ -1277,13 +1285,6 @@ fn main() {
 
     // Tell the linker where to find the bundled libraries.
     println!("cargo:rustc-link-search=native={}", runtime_dir.display());
-
-    // libkrun is a Rust staticlib that embeds its own copy of std.
-    // When linked into integration test binaries (src/boxlite/tests/), std
-    // symbols conflict; --allow-multiple-definition lets the linker pick one.
-    // The shim binary needs the same flag — emitted from src/shim/build.rs.
-    #[cfg(target_os = "linux")]
-    println!("cargo:rustc-link-arg-tests=-Wl,--allow-multiple-definition");
 
     // Expose the runtime directory to downstream crates (e.g., Python SDK)
     println!("cargo:runtime_dir={}", runtime_dir.display());

@@ -25,8 +25,10 @@ libslirp = []                                               # Uses external libs
 gvproxy = ["dep:libgvproxy-sys"]                             # Uses libgvproxy CGO shared library
 e2fsprogs = ["dep:e2fsprogs-sys"]                            # Bundled mke2fs for ext4 image creation
 bubblewrap = ["dep:bubblewrap-sys"]                          # Bundled bwrap for sandbox isolation (Linux)
-krunfw = ["dep:libkrun-sys", "libkrun-sys/krunfw"]           # Download libkrunfw firmware for runtime bundling
-krun = ["krunfw", "libkrun-sys/krun"]                        # Build + statically link libkrun.a (only for boxlite-shim)
+krunfw = ["dep:libkrun-sys", "libkrun-sys/krunfw"]           # Bundle libkrunfw shared library for libkrun's fallback path
+krun = ["krunfw", "libkrun-sys/krun"]                        # Link vendored libkrun as a Rust dependency (only for boxlite-shim)
+krunfw-kernel = ["krunfw", "libkrun-sys/krunfw-kernel"]      # Build/source libkrunfw kernel artifact for runtime env-enabled krun_set_kernel
+krunfw-kernel-llvm = ["krunfw-kernel", "libkrun-sys/krunfw-kernel-llvm"] # Use LLVM=1 for libkrunfw kernel builds
 rest = ["dep:reqwest", "dep:urlencoding", "dep:tokio-tungstenite"]  # REST API client backend
 embedded-runtime = []                                        # Embed runtime binaries via include_bytes!
 test-support = []                                            # Expose internal constructors for cross-crate tests
