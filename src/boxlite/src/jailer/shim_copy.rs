@@ -4,9 +4,9 @@
 //! copy (not hard-link) the shim binary into the jail directory to ensure
 //! complete memory isolation between boxes.
 //!
-//! `libkrunfw.*` covers both libkrunfw runtime files BoxLite needs beside the
-//! shim: `libkrunfw.so*` for libkrun's default `dlopen` fallback, and
-//! `libkrunfw.bin` for builds that call `krun_set_kernel` directly.
+//! Any packaged `libkrunfw.*` artifacts are copied beside the shim:
+//! `libkrunfw.bin` supports the explicit `krun_set_kernel` path, while
+//! `libkrunfw.so*` supports libkrun's `dlopen` fallback.
 //!
 //! # Why Copy Instead of Hard-Link?
 //!
@@ -32,9 +32,8 @@ use std::path::{Path, PathBuf};
 
 /// Library file name prefixes to copy alongside the shim binary.
 ///
-/// Only `libkrunfw` is needed here. The prefix covers the shared library
-/// (`libkrunfw.so*`) and, when built, the external kernel artifact
-/// (`libkrunfw.bin`). Other bundled libraries are handled separately.
+/// The prefix covers both the optional raw kernel (`libkrunfw.bin`) and the
+/// shared library (`libkrunfw.so*`).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 const LIBKRUNFW_PREFIX: &str = "libkrunfw.";
 
@@ -42,8 +41,7 @@ const LIBKRUNFW_PREFIX: &str = "libkrunfw.";
 ///
 /// This follows Firecracker's approach: copy (not hard-link) the shim binary
 /// into the jail directory to ensure complete memory isolation between boxes.
-/// `libkrunfw.*` is also copied so libkrun's `dlopen` fallback and BoxLite's
-/// explicit `krun_set_kernel` path both work after sandboxing.
+/// Any packaged `libkrunfw.*` artifacts are copied with it.
 ///
 /// # Arguments
 ///
@@ -98,7 +96,7 @@ pub fn copy_shim_to_box(shim_path: &Path, box_dir: &Path) -> BoxliteResult<PathB
         );
     }
 
-    // Copy libkrunfw so dlopen and krun_set_kernel can find it beside the shim.
+    // Copy all packaged firmware artifacts used by either runtime path.
     if let Some(shim_dir) = shim_path.parent() {
         copy_libkrunfw(shim_dir, &bin_dir)?;
     }
@@ -108,9 +106,8 @@ pub fn copy_shim_to_box(shim_path: &Path, box_dir: &Path) -> BoxliteResult<PathB
 
 /// Copy libkrunfw from the shim's directory to `dest_dir`.
 ///
-/// `libkrunfw.so*` is the shared-library bundle used by libkrun's fallback path;
-/// `libkrunfw.bin` is the optional external kernel artifact. Both share the
-/// `libkrunfw.` prefix.
+/// Copies `libkrunfw.so*` for libkrun's `dlopen` fallback and `libkrunfw.bin`
+/// for explicit `krun_set_kernel` configuration when those files are present.
 /// Uses copy-if-newer to avoid unnecessary copies on subsequent starts.
 fn copy_libkrunfw(src_dir: &Path, dest_dir: &Path) -> BoxliteResult<()> {
     let entries = match std::fs::read_dir(src_dir) {

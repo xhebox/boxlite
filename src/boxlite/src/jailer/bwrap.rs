@@ -28,6 +28,7 @@
 // Allow dead_code on non-Linux platforms where bwrap is not available
 #![allow(dead_code)]
 
+use crate::jailer::process_env::shim_process_env;
 use crate::runtime::advanced_options::SecurityOptions;
 use crate::runtime::layout::FilesystemLayout;
 use crate::util::find_binary;
@@ -601,24 +602,11 @@ pub fn build_shim_command(
         .setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .setenv("HOME", "/root");
 
-    // =========================================================================
-    // Preserve LD_LIBRARY_PATH for bundled libraries
-    // =========================================================================
-    // CRITICAL: The shim binary dynamically links against bundled libraries:
-    // - libkrun.so (KVM-based VM runtime)
-    // - libgvproxy.so (networking)
-    // - libkrunfw.so (firmware)
-    //
-    // These are in the same directory as the shim binary. Without LD_LIBRARY_PATH,
-    // the dynamic linker cannot find them and the shim will fail to start.
-    //
-    // Note: We get LD_LIBRARY_PATH from the parent process (set by util::find_binary_with_libpath)
+    // Preserve the bundled shared-library search path for libkrun's dlopen path.
     if let Ok(ld_library_path) = std::env::var("LD_LIBRARY_PATH") {
         bwrap.setenv("LD_LIBRARY_PATH", ld_library_path);
         tracing::debug!("Preserved LD_LIBRARY_PATH in sandbox");
     } else if let Some(shim_dir) = shim_path.parent() {
-        // Fallback: if LD_LIBRARY_PATH not set, use the shim's directory
-        // This handles cases where the shim is invoked directly
         bwrap.setenv("LD_LIBRARY_PATH", shim_dir.to_string_lossy().to_string());
         tracing::debug!(
             shim_dir = %shim_dir.display(),
@@ -626,21 +614,9 @@ pub fn build_shim_command(
         );
     }
 
-    // Preserve debugging environment variables
-    if let Ok(rust_log) = std::env::var("RUST_LOG") {
-        bwrap.setenv("RUST_LOG", rust_log);
-    }
-    if let Ok(rust_backtrace) = std::env::var("RUST_BACKTRACE") {
-        bwrap.setenv("RUST_BACKTRACE", rust_backtrace);
-    }
-    for name in [
-        "BOXLITE_KRUNFW_EXTERNAL_KERNEL",
-        "BOXLITE_KRUNFW_KERNEL_PATH",
-        "BOXLITE_KRUNFW_KERNEL_FORMAT",
-    ] {
-        if let Ok(value) = std::env::var(name) {
-            bwrap.setenv(name, value);
-        }
+    // Preserve the centrally allowlisted host environment.
+    for (name, value) in shim_process_env() {
+        bwrap.setenv(name, value);
     }
 
     // Set working directory

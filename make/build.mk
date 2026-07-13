@@ -1,25 +1,29 @@
 PHONY_TARGETS += guest shim runtime cli cli\:release skillbox-image build\:apps
 
+BUILD_PROFILE ?= release
+
 guest:
-	@bash $(SCRIPT_DIR)/build/build-guest.sh
+	@bash $(SCRIPT_DIR)/build/build-guest.sh --profile $(BUILD_PROFILE)
 
 shim:
-	@bash $(SCRIPT_DIR)/build/build-shim.sh
+	@bash $(SCRIPT_DIR)/build/build-shim.sh --profile $(BUILD_PROFILE)
 
-runtime:
-	@bash $(SCRIPT_DIR)/build/build-runtime.sh --profile release
+runtime: BUILD_PROFILE := release
+runtime: guest shim
+	@bash $(SCRIPT_DIR)/build/build-runtime.sh --profile $(BUILD_PROFILE)
 
-runtime\:debug:
-	@bash $(SCRIPT_DIR)/build/build-runtime.sh --profile debug
+runtime\:debug: BUILD_PROFILE := debug
+runtime\:debug: guest shim
+	@bash $(SCRIPT_DIR)/build/build-runtime.sh --profile $(BUILD_PROFILE)
 
 cli: runtime\:debug
 	@echo "🔨 Building boxlite CLI..."
-	@cargo build -p boxlite-cli
+	@bash $(SCRIPT_DIR)/build/build-cli.sh --profile debug
 	@echo "✅ CLI built: ./target/debug/boxlite"
 
 cli\:release: runtime
 	@echo "🔨 Building boxlite CLI (release)..."
-	@cargo build -p boxlite-cli --release
+	@bash $(SCRIPT_DIR)/build/build-cli.sh --profile release
 	@echo "✅ CLI built: ./target/release/boxlite"
 
 # Build the apps/ workspace (api, dashboard, runner, proxy, libs…) via the

@@ -9,16 +9,11 @@
 #   --profile PROFILE   Build profile: release or debug (default: release)
 #
 # Note: On macOS, the binary is automatically signed with hypervisor entitlements
-# Note: On Linux, the binary is statically linked for the active host Rust
-#       toolchain. glibc hosts produce static glibc; musl hosts produce static musl.
 
 set -e
 
-# Load common utilities
-SCRIPT_BUILD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_DIR="$(cd "$SCRIPT_BUILD_DIR/.." && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-source "$SCRIPT_DIR/common.sh"
+# Load canonical build-context utilities
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 # Capture original working directory before any cd commands
 ORIG_DIR="$(pwd)"
@@ -46,24 +41,8 @@ parse_args() {
         esac
     done
 
-    # Validate PROFILE value
-    if [ "$PROFILE" != "release" ] && [ "$PROFILE" != "debug" ]; then
-        echo "Invalid profile: $PROFILE"
-        echo "Run with --profile release or --profile debug"
-        exit 1
-    fi
-
-    # Resolve destination path to absolute path
-    if [ -n "$DEST_DIR_ARG" ]; then
-        # If relative, make it absolute relative to original working directory
-        if [[ "$DEST_DIR_ARG" != /* ]]; then
-            DEST_DIR="$ORIG_DIR/$DEST_DIR_ARG"
-        else
-            DEST_DIR="$DEST_DIR_ARG"
-        fi
-    else
-        DEST_DIR=""
-    fi
+    set_cargo_profile "$PROFILE" || exit 1
+    DEST_DIR=$(resolve_path_from "$ORIG_DIR" "$DEST_DIR_ARG")
 }
 
 parse_args "$@"
@@ -72,35 +51,25 @@ parse_args "$@"
 OS=$(detect_os)
 print_header "🚀 Building boxlite-shim on $OS..."
 
-SHIM_BINARY_PATH="$PROJECT_ROOT/target/$PROFILE/boxlite-shim"
+CARGO_TARGET_ROOT=$(cargo_target_dir)
+SHIM_BINARY_PATH="$CARGO_TARGET_ROOT/$PROFILE/boxlite-shim"
 
 # Build the shim binary
 build_shim_binary() {
     cd "$PROJECT_ROOT"
     echo "🔨 Building shim binary $PROFILE..."
-    local build_flag=""
-    if [ "$PROFILE" = "release" ]; then
-        build_flag="--release"
-    fi
+    local cargo_args
 
-    local feature_args
-    feature_args=$(boxlite_cargo_feature_args)
-    if [ -n "$feature_args" ]; then
-        echo "🧩 Cargo features: $feature_args"
-    fi
     if [ "$OS" = "linux" ]; then
-        # Build from src/shim so Cargo loads src/shim/.cargo/config.toml, where
-        # shim-only Linux rustflags live. Use an explicit target so proc-macros
-        # stay on the host while the shim binary gets target rustflags.
+        # Build from src/shim so Cargo applies the shim-only Linux rustflags in
+        # src/shim/.cargo/config.toml. The explicit target keeps those flags off
+        # host-built proc macros, which are dynamic libraries and cannot use
+        # crt-static. Cargo then writes the shim under target/<triple>/<profile>,
+        # so copy it back to target/<profile> for runtime assembly and embedding.
         local arch
         arch=$(uname -m)
         local rustc_host
-        rustc_host=$(rustc -vV | while read -r key value; do
-            if [ "$key" = "host:" ]; then
-                printf '%s\n' "$value"
-                break
-            fi
-        done)
+        rustc_host=$(rustc_host_triple)
 
         local target
         if [[ "$rustc_host" == *-musl ]]; then
@@ -109,11 +78,20 @@ build_shim_binary() {
             target="${arch}-unknown-linux-gnu"
         fi
 
-        echo "🎯 Static binary target: $target (crt-static + relocation-model=static)"
-        (cd "$PROJECT_ROOT/src/shim" && cargo build $build_flag $feature_args -p boxlite-shim --target "$target")
-        cp "$PROJECT_ROOT/target/$target/$PROFILE/boxlite-shim" "$SHIM_BINARY_PATH"
+        echo "🎯 Static PIE target: $target (crt-static)"
+        cargo_args=(build -p boxlite-shim --target "$target")
+        if [ -n "$CARGO_PROFILE_ARG" ]; then
+            cargo_args+=("$CARGO_PROFILE_ARG")
+        fi
+        (cd "$PROJECT_ROOT/src/shim" && CARGO_TARGET_DIR="$CARGO_TARGET_ROOT" cargo "${cargo_args[@]}")
+        mkdir -p "$(dirname "$SHIM_BINARY_PATH")"
+        cp "$CARGO_TARGET_ROOT/$target/$PROFILE/boxlite-shim" "$SHIM_BINARY_PATH"
     else
-        cargo build $build_flag $feature_args -p boxlite-shim
+        cargo_args=(build -p boxlite-shim)
+        if [ -n "$CARGO_PROFILE_ARG" ]; then
+            cargo_args+=("$CARGO_PROFILE_ARG")
+        fi
+        cargo "${cargo_args[@]}"
     fi
 }
 

@@ -110,10 +110,3 @@ require_command() {
         exit 1
     fi
 }
-
-# Preserve the old build entry point while keeping -sys crates feature-driven.
-boxlite_cargo_feature_args() {
-    if [ -n "${BOXLITE_BUILD_LIBKRUNFW+x}" ]; then
-        printf '%s' "--features krunfw-kernel"
-    fi
-}

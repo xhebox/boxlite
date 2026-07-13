@@ -112,8 +112,9 @@ fn main() {
     // Transitive dependencies from the Go runtime (embedded in the c-archive).
     // Go's net package uses the CGO resolver by default, which calls res_search
     // from libresolv for DNS lookups on both macOS and Linux.
-    #[cfg(target_os = "macos")]
-    {
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os == "macos" {
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
         println!("cargo:rustc-link-lib=framework=Security");
     }
@@ -123,8 +124,7 @@ fn main() {
     // causing SIGSEGV on TLS access (fs:[0x28]) on some VMs.
     // Do not add these glibc system paths for musl targets; they can make the
     // musl static link pick /usr/lib64/libc.so and fail.
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    {
+    if target_os == "linux" && target_env == "gnu" {
         let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
         // Debian/Ubuntu: /usr/lib/<triple>
         let gnu_triple = match arch.as_str() {
@@ -137,8 +137,9 @@ fn main() {
         println!("cargo:rustc-link-search=native=/usr/lib64");
         println!("cargo:rustc-link-lib=static=resolv");
     }
-    #[cfg(not(target_os = "linux"))]
-    println!("cargo:rustc-link-lib=resolv");
+    if target_os != "linux" {
+        println!("cargo:rustc-link-lib=resolv");
+    }
 
     // Expose library directory to downstream crates (used by boxlite/build.rs)
     // Convention: {LIBNAME}_BOXLITE_DEP=<path> for auto-discovery

@@ -14,11 +14,6 @@ readme = "README.md"
 name = "boxlite"
 path = "src/main.rs"
 
-[features]
-default = []
-krunfw-kernel = ["boxlite/krunfw-kernel"]
-krunfw-kernel-llvm = ["boxlite/krunfw-kernel-llvm"]
-
 [dependencies]
 boxlite = { workspace = true, features = ["rest"] }
 clap = { version = "4.5", features = ["derive", "env"] }

@@ -1,2 +1,2 @@
 [target.'cfg(target_os = "linux")']
-rustflags = ["-C", "target-feature=+crt-static", "-C", "relocation-model=static", "-C", "link-arg=-static", "-C", "link-arg=-Wl,-Bstatic"]
+rustflags = ["-C", "target-feature=+crt-static"]

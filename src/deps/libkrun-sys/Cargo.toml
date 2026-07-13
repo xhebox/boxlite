@@ -20,7 +20,6 @@ krun = { package = "libkrun", path = "vendor/libkrun/src/libkrun", optional = tr
 
 [features]
 default = []
-krun = ["dep:krun"] # Link vendored libkrun as a Rust dependency
-krunfw = []    # Provide libkrunfw shared library for runtime bundling; Linux downloads prebuilt .so by default
-krunfw-kernel = ["krunfw"] # Build libkrunfw from source and expose its raw kernel artifact
-krunfw-kernel-llvm = ["krunfw-kernel"] # Use LLVM=1 for libkrunfw kernel builds
+krun = ["dep:krun"] # Compile the vendored libkrun runtime
+krunfw = [] # Package libkrunfw artifacts
+krunfw-source = ["krunfw"] # Package source-built raw kernel and shared library; static musl packages only the raw kernel

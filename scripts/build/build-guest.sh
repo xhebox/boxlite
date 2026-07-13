@@ -15,11 +15,10 @@
 
 set -e
 
-# Load common utilities
+# Load shared build-context and setup utilities
 SCRIPT_BUILD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_DIR="$(cd "$SCRIPT_BUILD_DIR/.." && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-source "$SCRIPT_DIR/common.sh"
+# shellcheck source=./common.sh
+source "$SCRIPT_BUILD_DIR/common.sh"
 source "$SCRIPT_DIR/setup/setup-common.sh"
 
 # Capture original working directory before any cd commands
@@ -48,27 +47,17 @@ parse_args() {
         esac
     done
 
-    # Validate PROFILE value
-    if [ "$PROFILE" != "release" ] && [ "$PROFILE" != "debug" ]; then
-        echo "Invalid profile: $PROFILE"
-        echo "Run with --profile release or --profile debug"
-        exit 1
-    fi
-
-    # Resolve destination path to absolute path
-    if [ -n "$DEST_DIR_ARG" ]; then
-        # If relative, make it absolute relative to original working directory
-        if [[ "$DEST_DIR_ARG" != /* ]]; then
-            DEST_DIR="$ORIG_DIR/$DEST_DIR_ARG"
-        else
-            DEST_DIR="$DEST_DIR_ARG"
-        fi
-    else
-        DEST_DIR=""
-    fi
+    set_cargo_profile "$PROFILE" || exit 1
+    DEST_DIR=$(resolve_path_from "$ORIG_DIR" "$DEST_DIR_ARG")
 }
 
 parse_args "$@"
+CARGO_TARGET_ROOT=$(cargo_target_dir)
+# shellcheck source=../util.sh
+source "$SCRIPT_DIR/util.sh"
+GUEST_BINARY_PATH="$CARGO_TARGET_ROOT/$GUEST_TARGET/$PROFILE/boxlite-guest"
+
+RUSTC_HOST=$(rustc_host_triple)
 
 # Detect OS
 OS=$(detect_os)
@@ -79,15 +68,8 @@ check_prerequisites() {
     print_section "Checking prerequisites..."
     require_command "rustc" "Run: scripts/setup/setup-macos.sh (or setup-ubuntu.sh)"
 
-    local rustc_host
-    rustc_host=$(rustc -vV | while read -r key value; do
-        if [ "$key" = "host:" ]; then
-            printf '%s\n' "$value"
-            break
-        fi
-    done)
-    if [[ "$rustc_host" == *-musl ]]; then
-        print_info "Using native musl Rust toolchain: $rustc_host"
+    if [[ "$RUSTC_HOST" == *-musl ]]; then
+        print_info "Using native musl Rust toolchain: $RUSTC_HOST"
     else
         require_musl
     fi
@@ -98,17 +80,9 @@ check_prerequisites() {
 
 # Ensure Rust target is added
 setup_rust_target() {
-    source "$SCRIPT_DIR/util.sh"
     print_step "Checking Rust target $GUEST_TARGET... "
-    local rustc_host
-    rustc_host=$(rustc -vV | while read -r key value; do
-        if [ "$key" = "host:" ]; then
-            printf '%s\n' "$value"
-            break
-        fi
-    done)
 
-    if [ "$rustc_host" = "$GUEST_TARGET" ]; then
+    if [ "$RUSTC_HOST" = "$GUEST_TARGET" ]; then
         print_success "Using native host target"
     elif command -v rustup >/dev/null 2>&1; then
         if rustup target list | grep -q "$GUEST_TARGET (installed)"; then
@@ -119,7 +93,29 @@ setup_rust_target() {
             print_success "Target added"
         fi
     else
-        print_error "rustup not found and rustc host is $rustc_host, not $GUEST_TARGET"
+        print_error "rustup not found and rustc host is $RUSTC_HOST, not $GUEST_TARGET"
+        exit 1
+    fi
+}
+
+# Verify the guest has no dynamic interpreter or dependencies.
+verify_guest_binary() {
+    local file_output
+    file_output=$(file "$GUEST_BINARY_PATH")
+    if echo "$file_output" | grep -q "dynamically linked"; then
+        if command -v readelf >/dev/null 2>&1 \
+            && ! readelf -d "$GUEST_BINARY_PATH" | grep -q "(NEEDED)" \
+            && ! readelf -l "$GUEST_BINARY_PATH" | grep -q "INTERP"; then
+            print_info "boxlite-guest is static PIE (no dynamic dependencies or interpreter)"
+            return
+        fi
+
+        local musl_arch
+        musl_arch=$(echo "$GUEST_TARGET" | cut -d'-' -f1)
+        local musl_gcc="${musl_arch}-linux-musl-gcc"
+        print_error "boxlite-guest is dynamically linked, but must be statically linked"
+        echo "The guest binary at $GUEST_BINARY_PATH depends on libraries unavailable inside the VM."
+        echo "Check that $musl_gcc is a musl compiler: $musl_gcc --version"
         exit 1
     fi
 }
@@ -128,10 +124,6 @@ setup_rust_target() {
 build_guest_binary() {
     cd "$PROJECT_ROOT"
     echo "🔨 Building guest binary for $GUEST_TARGET $PROFILE..."
-    local build_flag=""
-    if [ "$PROFILE" = "release" ]; then
-        build_flag="--release"
-    fi
 
     # macOS cross-compilation needs musl-cross linker.
     # The project .cargo/config.toml is platform-agnostic (no linker).
@@ -154,43 +146,22 @@ build_guest_binary() {
     source "$SCRIPT_BUILD_DIR/build-libseccomp.sh"
     ensure_libseccomp_for_target "$GUEST_TARGET"
 
-    (cd "$PROJECT_ROOT/src/guest" && cargo build $build_flag --target "$GUEST_TARGET" -p boxlite-guest)
-
-    # Verify guest binary is statically linked
-    local guest_binary="$PROJECT_ROOT/target/$GUEST_TARGET/$PROFILE/boxlite-guest"
-    local file_output
-    file_output=$(file "$guest_binary")
-    if echo "$file_output" | grep -q "dynamically linked"; then
-        if command -v readelf >/dev/null 2>&1 \
-            && ! readelf -d "$guest_binary" | grep -q "(NEEDED)" \
-            && ! readelf -l "$guest_binary" | grep -q "INTERP"; then
-            print_info "boxlite-guest is static PIE (no dynamic dependencies or interpreter)"
-        else
-            local musl_arch
-            musl_arch=$(echo "$GUEST_TARGET" | cut -d'-' -f1)
-            local musl_gcc="${musl_arch}-linux-musl-gcc"
-            print_error "boxlite-guest is dynamically linked, but must be statically linked"
-            echo ""
-            echo "❌ Error: The boxlite-guest binary must be statically linked."
-            echo ""
-            echo "The guest binary at $guest_binary is dynamically linked, which means"
-            echo "it depends on shared libraries that won't be available inside the VM."
-            echo ""
-            echo "🔧 To fix this issue:"
-            echo "  Check your $musl_gcc version:"
-            echo "  $ $musl_gcc --version"
-            echo "  Verify whether your C compiler is a gnu-gcc wrapper instead of true musl-gcc"
-            echo ""
-            exit 1
-        fi
+    local cargo_args
+    cargo_args=(build)
+    if [ -n "$CARGO_PROFILE_ARG" ]; then
+        cargo_args+=("$CARGO_PROFILE_ARG")
     fi
+    cargo_args+=(--target "$GUEST_TARGET" -p boxlite-guest)
+    (cd "$PROJECT_ROOT/src/guest" && CARGO_TARGET_DIR="$CARGO_TARGET_ROOT" cargo "${cargo_args[@]}")
+
+    verify_guest_binary
 }
 
 # Copy binary to destination
 copy_to_destination() {
     if [ -z "$DEST_DIR" ]; then
         echo "✅ Guest binary built successfully (no destination specified)"
-        echo "Binary location: $PROJECT_ROOT/target/$GUEST_TARGET/$PROFILE/boxlite-guest"
+        echo "Binary location: $GUEST_BINARY_PATH"
         return 0
     fi
 
@@ -198,7 +169,7 @@ copy_to_destination() {
     # Absolute paths are used as-is
     echo "📦 Copying to destination: $DEST_DIR"
     mkdir -p "$DEST_DIR"
-    cp "$PROJECT_ROOT/target/$GUEST_TARGET/$PROFILE/boxlite-guest" "$DEST_DIR/"
+    cp "$GUEST_BINARY_PATH" "$DEST_DIR/"
 
     echo "✅ Guest binary built and copied to $DEST_DIR"
     echo "Binary info:"
@@ -208,9 +179,17 @@ copy_to_destination() {
 
 # Main execution
 main() {
-    check_prerequisites
-    setup_rust_target
-    build_guest_binary
+    if [ "${SKIP_GUEST_BUILD:-0}" = "1" ]; then
+        if [ ! -x "$GUEST_BINARY_PATH" ]; then
+            print_error "SKIP_GUEST_BUILD=1 but guest binary not found at $GUEST_BINARY_PATH"
+            exit 1
+        fi
+        print_success "Using pre-built guest: $GUEST_BINARY_PATH"
+    else
+        check_prerequisites
+        setup_rust_target
+        build_guest_binary
+    fi
     copy_to_destination
 
     echo ""

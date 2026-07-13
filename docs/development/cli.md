@@ -4,25 +4,24 @@ This guide covers building, testing, and contributing to the BoxLite CLI (`boxli
 
 ## Building the CLI
 
-From the repository root:
+From the repository root, use the canonical full-runtime entrypoints:
 
 ```bash
+# Matching debug runtime and CLI
 make cli
+
+# Matching release runtime and CLI
+make cli:release
 ```
 
-This builds the debug runtime first (if needed) via `make runtime:debug`, then runs `cargo build -p boxlite-cli`. The binary is produced at:
+Each target builds the matching runtime profile before compiling the CLI. The binaries are produced at `./target/debug/boxlite` and `./target/release/boxlite`, respectively.
 
-```
-./target/debug/boxlite
-```
-
-Run it with `./target/debug/boxlite --help`. For a release build, use:
+Run the debug build with `./target/debug/boxlite --help`. Use direct Cargo commands when working on the CLI crate without rebuilding the full runtime:
 
 ```bash
+cargo build -p boxlite-cli
 cargo build -p boxlite-cli --release
 ```
-
-The release binary is at `./target/release/boxlite`.
 
 ## Testing
 
@@ -83,7 +82,8 @@ fn test_run_exit_code_success() {
 
 | Command        | Description |
 |----------------|-------------|
-| `make cli`     | Build the CLI (after building the debug runtime). |
+| `make cli`     | Build the matching debug runtime and CLI. |
+| `make cli:release` | Build the matching release runtime and CLI. |
 | `make test:integration:cli` | Run CLI integration tests (single-threaded). |
 | `make test`    | Run strict full matrix (unit + integration across core + SDK). |
 | `make test:integration:core` | Run core integration suites (Rust + CLI). |

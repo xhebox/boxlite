@@ -38,6 +38,121 @@ const LIB_DIR: &str = "lib64";
 
 // ── Core utilities ───────────────────────────────────────────────────────────
 
+#[cfg(target_os = "linux")]
+fn target_is_static_musl() -> bool {
+    env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("musl")
+        && env::var("CARGO_CFG_TARGET_FEATURE")
+            .unwrap_or_default()
+            .split(',')
+            .any(|enabled| enabled == "crt-static")
+}
+
+#[cfg(target_os = "linux")]
+fn libkrunfw_make_config() -> (HashMap<String, String>, Vec<String>) {
+    let gcc_available = Command::new("gcc")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    if gcc_available {
+        return (HashMap::new(), Vec::new());
+    }
+
+    let clang_available = Command::new("clang")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    if !clang_available {
+        panic!("building libkrunfw from source requires gcc or clang");
+    }
+
+    (
+        HashMap::from([("LLVM".to_string(), "1".to_string())]),
+        vec!["LLVM=1".to_string()],
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn kernel_target() -> (&'static str, &'static str) {
+    match env::var("CARGO_CFG_TARGET_ARCH").ok().as_deref() {
+        Some("x86_64") => ("vmlinux", "x86_64"),
+        Some("aarch64") => ("arch/arm64/boot/Image", "arm64"),
+        Some("riscv64") => ("arch/riscv/boot/Image", "riscv"),
+        Some(arch) => panic!("Unsupported libkrunfw kernel target architecture: {arch}"),
+        None => panic!("CARGO_CFG_TARGET_ARCH is not set"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn configure_kernel_make_arch(make_args: &mut Vec<String>) {
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH is not set");
+    let host_arch = env::var("HOST")
+        .expect("HOST is not set")
+        .split('-')
+        .next()
+        .expect("HOST is empty")
+        .to_string();
+    if target_arch != host_arch {
+        make_args.push(format!("ARCH={}", kernel_target().1));
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn kernel_source_path(libkrunfw_src: &Path) -> PathBuf {
+    let makefile = fs::read_to_string(libkrunfw_src.join("Makefile"))
+        .expect("failed to read vendored libkrunfw Makefile");
+    let kernel_version = makefile
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("KERNEL_VERSION")
+                .and_then(|value| value.split_once('='))
+                .map(|(_, value)| value.trim())
+        })
+        .filter(|value| !value.is_empty())
+        .expect("libkrunfw Makefile does not define KERNEL_VERSION");
+    libkrunfw_src.join(kernel_version).join(kernel_target().0)
+}
+
+#[cfg(target_os = "linux")]
+fn export_libkrunfw_kernel(libkrunfw_src: &Path, out_dir: &Path) {
+    let kernel_src = kernel_source_path(libkrunfw_src);
+    if !kernel_src.is_file() {
+        panic!(
+            "libkrunfw source build did not produce {}",
+            kernel_src.display()
+        );
+    }
+
+    let kernel_dest = out_dir.join("libkrunfw.bin");
+    fs::copy(&kernel_src, &kernel_dest).unwrap_or_else(|error| {
+        panic!(
+            "Failed to copy krunfw kernel artifact {} -> {}: {}",
+            kernel_src.display(),
+            kernel_dest.display(),
+            error
+        )
+    });
+    println!("cargo:KERNEL_BOXLITE_DEP={}", kernel_dest.display());
+}
+
+#[cfg(target_os = "linux")]
+fn build_libkrunfw_kernel(
+    libkrunfw_src: &Path,
+    make_env: &HashMap<String, String>,
+    make_args: &[String],
+) {
+    let kernel_src = kernel_source_path(libkrunfw_src);
+    let kernel_relative = kernel_src
+        .strip_prefix(libkrunfw_src)
+        .expect("libkrunfw kernel path must be inside the source directory");
+    let mut make_cmd = make_command(libkrunfw_src, make_env);
+    make_cmd.args(make_args).arg(kernel_relative);
+    run_command(&mut make_cmd, "make libkrunfw kernel");
+}
+
 /// Runs a command and panics with a helpful message if it fails.
 fn run_command(cmd: &mut Command, description: &str) {
     let status = cmd
@@ -68,36 +183,18 @@ fn verify_vendored_sources(manifest_dir: &Path, require_libkrunfw: bool) {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn verify_pyelftools_available() {
-    let status = Command::new("python3")
+    let available = Command::new("python3")
         .args(["-c", "import elftools.elf.elffile"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
-
-    match status {
-        Ok(status) if status.success() => return,
-        Ok(_) => {
-            eprintln!("ERROR: libkrunfw source build requires Python module pyelftools");
-            eprintln!();
-            eprintln!("Install it with your system package manager, for example:");
-            eprintln!("  Debian/Ubuntu: sudo apt-get install python3-pyelftools");
-            eprintln!("  Fedora:        sudo dnf install python3-pyelftools");
-            eprintln!();
-            eprintln!("Or install it for this Python interpreter:");
-            eprintln!("  python3 -m pip install pyelftools");
-            std::process::exit(1);
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            eprintln!("ERROR: libkrunfw source build requires python3 (not found in PATH)");
-            eprintln!("Install Python 3 and then install pyelftools:");
-            eprintln!("  python3 -m pip install pyelftools");
-            std::process::exit(1);
-        }
-        Err(e) => {
-            eprintln!("ERROR: failed to run python3 to check for pyelftools: {e}");
-            std::process::exit(1);
-        }
+        .status()
+        .is_ok_and(|status| status.success());
+    if !available {
+        panic!(
+            "dynamic libkrunfw source builds require python3 with pyelftools; install it with `python3 -m pip install pyelftools`"
+        );
     }
 }
 
@@ -703,14 +800,14 @@ impl MacToolchain {
 
 // ── Platform build orchestration ─────────────────────────────────────────────
 
-/// macOS: Build libkrunfw runtime sidecars based on enabled features.
-///
-/// Vendored libkrun is linked by Cargo as a Rust dependency; this build script
-/// only prepares libkrunfw artifacts for runtime bundling.
+/// Build and export the libkrunfw dylib when `krunfw` is enabled.
 #[cfg(target_os = "macos")]
 fn build() {
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    if !cfg!(feature = "krunfw") {
+        return;
+    }
 
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let libkrunfw_install = out_dir.join("libkrunfw");
     let libkrunfw_lib = libkrunfw_install.join(LIB_DIR);
 
@@ -729,145 +826,66 @@ fn build() {
 
     // Expose libkrunfw library directory for downstream bundling.
     println!("cargo:LIBKRUNFW_BOXLITE_DEP={}", libkrunfw_lib.display());
-
-    if cfg!(feature = "krun") {
-        println!("cargo:warning=Linking vendored libkrun Rust dependency");
-    }
 }
 
-/// Linux: Build libkrunfw runtime sidecars based on enabled features.
-///
-/// Vendored libkrun is linked by Cargo as a Rust dependency; this build script
-/// only prepares libkrunfw artifacts for runtime bundling.
+/// Build and export the libkrunfw artifacts selected by the enabled features
+/// and target link mode.
 #[cfg(target_os = "linux")]
 fn build() {
+    if !cfg!(feature = "krunfw") {
+        return;
+    }
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let static_musl = target_is_static_musl();
+    let build_from_source = cfg!(feature = "krunfw-source");
+
+    if static_musl && !build_from_source {
+        return;
+    }
+
+    if build_from_source {
+        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+        verify_vendored_sources(&manifest_dir, true);
+        if !static_musl {
+            verify_pyelftools_available();
+        }
+        let libkrunfw_src = manifest_dir.join("vendor/libkrunfw");
+        let (make_env, mut make_args) = libkrunfw_make_config();
+        configure_kernel_make_arch(&mut make_args);
+        build_libkrunfw_kernel(&libkrunfw_src, &make_env, &make_args);
+
+        if !static_musl {
+            let libkrunfw_install = out_dir.join("libkrunfw");
+            build_with_make(
+                &libkrunfw_src,
+                &libkrunfw_install,
+                "libkrunfw",
+                &make_env,
+                &make_args,
+            );
+            let libkrunfw_lib_dir = libkrunfw_install.join(LIB_DIR);
+            LibFixup::fix(&libkrunfw_lib_dir, "libkrunfw")
+                .unwrap_or_else(|error| panic!("Failed to fix libkrunfw: {error}"));
+            println!(
+                "cargo:LIBKRUNFW_BOXLITE_DEP={}",
+                libkrunfw_lib_dir.display()
+            );
+        }
+
+        export_libkrunfw_kernel(&libkrunfw_src, &out_dir);
+        return;
+    }
 
     let libkrunfw_install = out_dir.join("libkrunfw");
     let libkrunfw_lib_dir = libkrunfw_install.join(LIB_DIR);
-
-    // Download/build libkrunfw. The shared library is enough for libkrun's
-    // dlopen fallback; krunfw-kernel additionally exposes libkrunfw.bin for the
-    // runtime env-enabled krun_set_kernel path.
-    let build_krunfw_kernel = cfg!(feature = "krunfw-kernel");
-    let build_kernel_with_llvm = cfg!(feature = "krunfw-kernel-llvm");
-    if build_krunfw_kernel {
-        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        if build_kernel_with_llvm {
-            println!(
-                "cargo:warning=Building libkrunfw from source (krunfw-kernel-llvm feature, LLVM=1)"
-            );
-        } else {
-            println!("cargo:warning=Building libkrunfw from source (krunfw-kernel feature)");
-        }
-        verify_vendored_sources(&manifest_dir, true);
-        verify_pyelftools_available();
-
-        let libkrunfw_src = manifest_dir.join("vendor/libkrunfw");
-        let libkrunfw_env = if build_kernel_with_llvm {
-            HashMap::from([
-                ("LLVM".to_string(), "1".to_string()),
-                ("CC".to_string(), "clang".to_string()),
-                ("STRIP".to_string(), "llvm-strip".to_string()),
-            ])
-        } else {
-            HashMap::new()
-        };
-        let libkrunfw_make_args = if build_kernel_with_llvm {
-            vec![
-                "LLVM=1".to_string(),
-                "CC=clang".to_string(),
-                "STRIP=llvm-strip".to_string(),
-            ]
-        } else {
-            Vec::new()
-        };
-        build_with_make(
-            &libkrunfw_src,
-            &libkrunfw_install,
-            "libkrunfw",
-            &libkrunfw_env,
-            &libkrunfw_make_args,
-        );
-
-        let kernel_binary = match env::var("CARGO_CFG_TARGET_ARCH").ok().as_deref() {
-            Some("x86_64") => "vmlinux",
-            Some("aarch64") => "arch/arm64/boot/Image",
-            Some("riscv64") => "arch/riscv/boot/Image",
-            Some(arch) => panic!("Unsupported libkrunfw kernel target architecture: {arch}"),
-            None => panic!("CARGO_CFG_TARGET_ARCH is not set"),
-        };
-        let kernel_src = fs::read_dir(&libkrunfw_src)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Failed to read libkrunfw source directory {}: {}",
-                    libkrunfw_src.display(),
-                    e
-                )
-            })
-            .filter_map(|entry| entry.ok())
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.is_dir()
-                    && path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| name.starts_with("linux-"))
-            })
-            .map(|path| path.join(kernel_binary))
-            .filter(|path| path.is_file())
-            .map(|path| {
-                let modified = path
-                    .metadata()
-                    .and_then(|metadata| metadata.modified())
-                    .unwrap_or(std::time::UNIX_EPOCH);
-                (modified, path)
-            })
-            .max_by_key(|(modified, _)| *modified)
-            .map(|(_, path)| path)
-            .unwrap_or_else(|| {
-                panic!(
-                    "krunfw-kernel feature expected a kernel artifact matching linux-*/{} under {}",
-                    kernel_binary,
-                    libkrunfw_src.display()
-                )
-            });
-
-        let kernel_name = "libkrunfw.bin";
-        let kernel_dest = out_dir.join(kernel_name);
-        fs::copy(&kernel_src, &kernel_dest).unwrap_or_else(|e| {
-            panic!(
-                "Failed to copy krunfw kernel artifact {} -> {}: {}",
-                kernel_src.display(),
-                kernel_dest.display(),
-                e
-            )
-        });
-
-        println!("cargo:KERNEL_BOXLITE_DEP={}", kernel_dest.display());
-        println!(
-            "cargo:warning=Exposed krunfw kernel artifact: {}",
-            kernel_dest.display()
-        );
-    } else {
-        println!("cargo:warning=Downloading pre-compiled libkrunfw...");
-        download_libkrunfw_so(&libkrunfw_install);
-    }
-
+    download_libkrunfw_so(&libkrunfw_install);
     LibFixup::fix(&libkrunfw_lib_dir, "libkrunfw")
-        .unwrap_or_else(|e| panic!("Failed to fix libkrunfw: {}", e));
-
-    // Expose libkrunfw library directory for downstream bundling
+        .unwrap_or_else(|error| panic!("Failed to fix libkrunfw: {error}"));
     println!(
         "cargo:LIBKRUNFW_BOXLITE_DEP={}",
         libkrunfw_lib_dir.display()
     );
-
-    // libkrun itself is linked by Cargo as a Rust dependency; build.rs only
-    // prepares libkrunfw sidecar artifacts for runtime bundling.
-    if cfg!(feature = "krun") {
-        println!("cargo:warning=Linking vendored libkrun Rust dependency");
-    }
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────

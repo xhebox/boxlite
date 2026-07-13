@@ -959,8 +959,7 @@ impl EmbeddedManifest {
     ///
     /// Search order:
     /// 1. Current Cargo target: `target/{TARGET}/{profile}/boxlite-shim`
-    /// 2. Native: `target/{profile}/boxlite-shim` (macOS / native builds)
-    /// 3. Linux gnu fallback: `target/{arch}-unknown-linux-gnu/{profile}/boxlite-shim`
+    /// 2. Native build output: `target/{profile}/boxlite-shim`
     fn find_prebuilt_shim(workspace_root: &Path, profile: &str) -> Option<PathBuf> {
         let target_dir = workspace_root.join("target");
 
@@ -971,23 +970,9 @@ impl EmbeddedManifest {
             }
         }
 
-        // Native path (macOS / native cargo builds).
         let native = target_dir.join(profile).join("boxlite-shim");
         if native.is_file() {
             return Some(native);
-        }
-
-        // Linux gnu (static glibc — Go c-archive is incompatible with musl TLS)
-        // Check matching architecture first to avoid picking wrong binary on
-        // multi-arch machines.
-        for arch in Self::preferred_arches() {
-            let gnu = target_dir
-                .join(format!("{}-unknown-linux-gnu", arch))
-                .join(profile)
-                .join("boxlite-shim");
-            if gnu.is_file() {
-                return Some(gnu);
-            }
         }
 
         None
