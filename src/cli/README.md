@@ -64,7 +64,7 @@ cd boxlite
 git submodule update --init --recursive
 
 # Build the CLI
-cargo build --release -p boxlite-cli
+make cli
 
 # Binary: target/release/boxlite
 ```

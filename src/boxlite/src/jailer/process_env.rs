@@ -4,6 +4,7 @@
 const SHIM_ENV_ALLOWLIST: &[&str] = &[
     "RUST_LOG",
     "RUST_BACKTRACE",
+    crate::runtime::constants::envs::BOXLITE_KRUNFW_EXTERNAL_KERNEL,
     crate::runtime::constants::envs::BOXLITE_KRUNFW_KERNEL_PATH,
     crate::runtime::constants::envs::BOXLITE_KRUNFW_KERNEL_FORMAT,
 ];
@@ -27,6 +28,7 @@ mod tests {
 
     #[test]
     fn allowlist_contains_external_kernel_controls() {
+        assert!(SHIM_ENV_ALLOWLIST.contains(&"BOXLITE_KRUNFW_EXTERNAL_KERNEL"));
         assert!(SHIM_ENV_ALLOWLIST.contains(&"BOXLITE_KRUNFW_KERNEL_PATH"));
         assert!(SHIM_ENV_ALLOWLIST.contains(&"BOXLITE_KRUNFW_KERNEL_FORMAT"));
     }

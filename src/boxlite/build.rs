@@ -484,14 +484,28 @@ impl PrebuiltRuntime {
     /// Maps the host platform to the runtime artifact target name.
     /// Matches the naming convention from config.yml and build-runtime.yml.
     fn runtime_target() -> Option<&'static str> {
-        let os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-        let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        {
+            Some("darwin-arm64")
+        }
 
-        match (os.as_str(), arch.as_str()) {
-            ("macos", "aarch64") => Some("darwin-arm64"),
-            ("linux", "x86_64") => Some("linux-x64-gnu"),
-            ("linux", "aarch64") => Some("linux-arm64-gnu"),
-            _ => None,
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            Some("linux-x64-gnu")
+        }
+
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        {
+            Some("linux-arm64-gnu")
+        }
+
+        #[cfg(not(any(
+            all(target_os = "macos", target_arch = "aarch64"),
+            all(target_os = "linux", target_arch = "x86_64"),
+            all(target_os = "linux", target_arch = "aarch64")
+        )))]
+        {
+            None
         }
     }
 

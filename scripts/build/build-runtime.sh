@@ -7,7 +7,7 @@ SCRIPT_BUILD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_BUILD_DIR/common.sh"
 
-PROFILE=release
+PROFILE="${BUILD_PROFILE:-release}"
 
 print_help() {
     cat <<EOF
@@ -18,8 +18,10 @@ Assemble pre-built BoxLite components into a runtime containing:
   - boxlite-guest
   - packaged libkrunfw artifacts, when enabled
 
-Use make runtime or make runtime:debug to build prerequisites. Output is
-written to target/boxlite-runtime/<profile>.
+Use make runtime to build prerequisites. Output is written to
+target/boxlite-runtime/<profile>.
+
+BUILD_PROFILE also selects the profile; the default is release.
 EOF
 }
 

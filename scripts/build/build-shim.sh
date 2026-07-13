@@ -6,7 +6,9 @@
 #
 # Options:
 #   --dest-dir DIR    Directory to copy the shim binary to
-#   --profile PROFILE   Build profile: release or debug (default: release)
+#   --profile PROFILE   Build profile: release or debug
+#
+# BUILD_PROFILE also selects the profile; the default is release.
 #
 # Note: On macOS, the binary is automatically signed with hypervisor entitlements
 
@@ -21,7 +23,7 @@ ORIG_DIR="$(pwd)"
 # Parse command-line arguments
 parse_args() {
     DEST_DIR_ARG=""
-    PROFILE="release"
+    PROFILE="${BUILD_PROFILE:-release}"
 
     while [[ $# -gt 0 ]]; do
         case $1 in

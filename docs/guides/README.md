@@ -31,8 +31,7 @@ make dev:python
 | `make guest`       | Cross-compile guest binary (musl static) |
 | `make shim`        | Build boxlite-shim binary                |
 | `make runtime`     | Build complete BoxLite runtime           |
-| `make cli`         | Build matching debug runtime and CLI     |
-| `make cli:release` | Build matching release runtime and CLI   |
+| `make cli`         | Build the CLI (release by default)        |
 | `make dev:python`  | Local Python SDK development             |
 | `make dist:python` | Build portable Python wheels             |
 | `make clean`       | Clean build artifacts                    |

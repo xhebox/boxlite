@@ -2,6 +2,7 @@
 
 use super::context::KrunContext;
 use crate::runtime::constants::envs::{
+    BOXLITE_KRUNFW_EXTERNAL_KERNEL as ENV_KRUNFW_EXTERNAL_KERNEL,
     BOXLITE_KRUNFW_KERNEL_FORMAT as ENV_KRUNFW_KERNEL_FORMAT,
     BOXLITE_KRUNFW_KERNEL_PATH as ENV_KRUNFW_KERNEL_PATH,
 };
@@ -18,13 +19,53 @@ pub(crate) struct KrunfwKernelConfig {
 
 impl KrunfwKernelConfig {
     pub(crate) fn from_env() -> BoxliteResult<Option<Self>> {
-        let Some(path) = Self::find_path()? else {
+        if !Self::enabled_from_env()? {
             return Ok(None);
-        };
+        }
+
+        let path = Self::find_path()?.ok_or_else(|| {
+            BoxliteError::Config(format!(
+                "{ENV_KRUNFW_EXTERNAL_KERNEL} is enabled, but no external kernel was found; set {ENV_KRUNFW_KERNEL_PATH} or place {LIBKRUNFW_KERNEL_FILE} next to boxlite-shim or in BOXLITE_RUNTIME_DIR"
+            ))
+        })?;
         Ok(Some(Self {
             path,
             format: Self::format_from_env()?,
         }))
+    }
+
+    fn enabled_by_default() -> bool {
+        cfg!(all(target_env = "musl", target_feature = "crt-static"))
+    }
+
+    fn parse_enabled(value: &str) -> BoxliteResult<Option<bool>> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "auto" => Ok(None),
+            "1" | "true" | "on" | "yes" => Ok(Some(true)),
+            "0" | "false" | "off" | "no" => Ok(Some(false)),
+            other => Err(BoxliteError::Config(format!(
+                "unsupported {ENV_KRUNFW_EXTERNAL_KERNEL}={other}; use 1/true/on/yes, 0/false/off/no, or auto"
+            ))),
+        }
+    }
+
+    fn resolve_enabled(value: Option<&str>, default: bool) -> BoxliteResult<bool> {
+        value
+            .map(Self::parse_enabled)
+            .transpose()
+            .map(|configured| configured.flatten().unwrap_or(default))
+    }
+
+    fn enabled_from_env() -> BoxliteResult<bool> {
+        match std::env::var(ENV_KRUNFW_EXTERNAL_KERNEL) {
+            Ok(value) => Self::resolve_enabled(Some(&value), Self::enabled_by_default()),
+            Err(std::env::VarError::NotPresent) => {
+                Self::resolve_enabled(None, Self::enabled_by_default())
+            }
+            Err(error) => Err(BoxliteError::Config(format!(
+                "failed to read {ENV_KRUNFW_EXTERNAL_KERNEL}: {error}"
+            ))),
+        }
     }
 
     pub(crate) fn apply(&self, ctx: &KrunContext) -> BoxliteResult<()> {
@@ -122,12 +163,6 @@ impl KrunfwKernelConfig {
             return Ok(Some(path));
         }
 
-        if cfg!(all(target_env = "musl", target_feature = "crt-static")) {
-            return Err(BoxliteError::Config(format!(
-                "static musl libkrun requires an external kernel; set {ENV_KRUNFW_KERNEL_PATH} or place {LIBKRUNFW_KERNEL_FILE} next to boxlite-shim or in BOXLITE_RUNTIME_DIR"
-            )));
-        }
-
         Ok(None)
     }
 }
@@ -135,6 +170,48 @@ impl KrunfwKernelConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_external_kernel_gate() {
+        for value in ["1", "true", "on", "yes", " TRUE "] {
+            assert_eq!(
+                KrunfwKernelConfig::parse_enabled(value).unwrap(),
+                Some(true)
+            );
+        }
+        for value in ["0", "false", "off", "no", " FALSE "] {
+            assert_eq!(
+                KrunfwKernelConfig::parse_enabled(value).unwrap(),
+                Some(false)
+            );
+        }
+        for value in ["", " ", "auto", " AUTO "] {
+            assert_eq!(KrunfwKernelConfig::parse_enabled(value).unwrap(), None);
+        }
+        assert!(KrunfwKernelConfig::parse_enabled("enabled").is_err());
+    }
+
+    #[test]
+    fn external_kernel_gate_uses_platform_default_only_for_auto() {
+        assert!(KrunfwKernelConfig::resolve_enabled(Some("true"), false).unwrap());
+        assert!(!KrunfwKernelConfig::resolve_enabled(Some("false"), true).unwrap());
+        assert!(KrunfwKernelConfig::resolve_enabled(Some("auto"), true).unwrap());
+        assert!(!KrunfwKernelConfig::resolve_enabled(Some("auto"), false).unwrap());
+        assert!(KrunfwKernelConfig::resolve_enabled(None, true).unwrap());
+        assert!(!KrunfwKernelConfig::resolve_enabled(None, false).unwrap());
+    }
+
+    #[cfg(all(target_env = "musl", target_feature = "crt-static"))]
+    #[test]
+    fn external_kernel_defaults_on_for_static_musl() {
+        assert!(KrunfwKernelConfig::enabled_by_default());
+    }
+
+    #[cfg(not(all(target_env = "musl", target_feature = "crt-static")))]
+    #[test]
+    fn external_kernel_defaults_off_without_static_musl() {
+        assert!(!KrunfwKernelConfig::enabled_by_default());
+    }
 
     #[test]
     fn parses_explicit_formats() {

@@ -127,7 +127,8 @@ jobs:
 
           export SKIP_GUEST_BUILD=1
           export PATH="/usr/local/go/bin:$CARGO_HOME/bin:$PATH"
-          make setup:build cli:release
+          make setup:build
+          make cli
 
           command -v sccache &>/dev/null && sccache --show-stats || true
           CONTAINER_SCRIPT
@@ -151,7 +152,8 @@ jobs:
       - name: Build runtime (macOS)
         if: runner.os == 'macOS'
         run: |
-          make setup:build cli:release
+          make setup:build
+          make cli
           command -v sccache &>/dev/null && sccache --show-stats || true
 
       - name: Package runtime
