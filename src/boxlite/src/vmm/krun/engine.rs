@@ -233,11 +233,6 @@ impl Vmm for Krun {
 
         // Create and configure libkrun context
         let ctx = unsafe {
-            tracing::debug!("Initializing libkrun logging system");
-            if let Err(e) = KrunContext::init_logging() {
-                tracing::warn!("Failed to initialize libkrun logging: {}", e);
-            }
-
             tracing::debug!("Creating libkrun context");
             let mut ctx = KrunContext::create()?;
 

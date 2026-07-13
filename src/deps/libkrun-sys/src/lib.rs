@@ -7,22 +7,6 @@
 #[cfg(feature = "krun")]
 use std::os::raw::c_char;
 
-// Log constants from libkrun.h
-pub const KRUN_LOG_TARGET_DEFAULT: i32 = 0;
-pub const KRUN_LOG_TARGET_STDOUT: i32 = 1;
-pub const KRUN_LOG_TARGET_STDERR: i32 = 2;
-
-pub const KRUN_LOG_LEVEL_OFF: u32 = 0;
-pub const KRUN_LOG_LEVEL_ERROR: u32 = 1;
-pub const KRUN_LOG_LEVEL_WARN: u32 = 2;
-pub const KRUN_LOG_LEVEL_INFO: u32 = 3;
-pub const KRUN_LOG_LEVEL_DEBUG: u32 = 4;
-pub const KRUN_LOG_LEVEL_TRACE: u32 = 5;
-
-pub const KRUN_LOG_STYLE_AUTO: u32 = 0;
-pub const KRUN_LOG_STYLE_ALWAYS: u32 = 1;
-pub const KRUN_LOG_STYLE_NEVER: u32 = 2;
-
 // Disk format constants from libkrun.h
 pub const KRUN_DISK_FORMAT_RAW: u32 = 0;
 pub const KRUN_DISK_FORMAT_QCOW2: u32 = 1;
@@ -34,19 +18,6 @@ pub const KRUN_KERNEL_FORMAT_PE_GZ: u32 = 2;
 pub const KRUN_KERNEL_FORMAT_IMAGE_BZ2: u32 = 3;
 pub const KRUN_KERNEL_FORMAT_IMAGE_GZ: u32 = 4;
 pub const KRUN_KERNEL_FORMAT_IMAGE_ZSTD: u32 = 5;
-#[cfg(feature = "krun")]
-pub unsafe fn krun_init_log(_target: i32, _level: u32, _style: u32, _flags: u32) -> i32 {
-    // In the rlib-backed build, libkrun shares the process-wide Rust `log`
-    // logger with the shim. The shim installs tracing/logging before creating
-    // the VMM, so calling libkrun's env_logger-based initializer would panic
-    // inside an extern "C" function and abort. Treat logging as already ready.
-    0
-}
-
-#[cfg(feature = "krun")]
-pub unsafe fn krun_set_log_level(level: u32) -> i32 {
-    krun::krun_set_log_level(level)
-}
 
 #[cfg(feature = "krun")]
 pub unsafe fn krun_create_ctx() -> i32 {

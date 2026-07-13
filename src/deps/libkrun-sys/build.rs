@@ -840,11 +840,9 @@ fn build() {
     let static_musl = target_is_static_musl();
     let build_from_source = cfg!(feature = "krunfw-source");
 
-    if static_musl && !build_from_source {
-        return;
-    }
-
-    if build_from_source {
+    // Static musl cannot use libkrunfw's dlopen path, so always build and
+    // export the raw kernel even when only the base `krunfw` feature is enabled.
+    if static_musl || build_from_source {
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
         verify_vendored_sources(&manifest_dir, true);
         if !static_musl {
