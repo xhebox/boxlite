@@ -137,6 +137,10 @@ func buildImageRegistries(insecureRegistries []string, ghcrUsername, ghcrToken s
 
 // NewClient creates a new BoxLite client backed by the BoxLite VM runtime.
 func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
+	if strings.TrimSpace(config.VolumeBucketPrefix) == "" {
+		return nil, fmt.Errorf("VOLUME_BUCKET_PREFIX is required")
+	}
+
 	var opts []boxlite.RuntimeOption
 	if config.HomeDir != "" {
 		opts = append(opts, boxlite.WithHomeDir(config.HomeDir))
@@ -170,10 +174,6 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 		logger = slog.Default()
 	}
 
-	volumeBucketPrefix := config.VolumeBucketPrefix
-	if volumeBucketPrefix == "" {
-		volumeBucketPrefix = "boxlite-volume-"
-	}
 	return &Client{
 		runtime:            rt,
 		logger:             logger,
@@ -183,7 +183,7 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 		awsEndpointUrl:     config.AWSEndpointUrl,
 		awsAccessKeyId:     config.AWSAccessKeyId,
 		awsSecretAccessKey: config.AWSSecretAccessKey,
-		volumeBucketPrefix: volumeBucketPrefix,
+		volumeBucketPrefix: config.VolumeBucketPrefix,
 		volumeMutexes:      make(map[string]*sync.Mutex),
 		volumeCleanup: volumeCleanupConfig{
 			interval:        config.VolumeCleanupInterval,

@@ -52,21 +52,20 @@ func (c *Client) getVolumeMounts(ctx context.Context, volumes []dto.VolumeDTO) (
 	fuseMountedVolumes := make(map[string]bool)
 
 	for _, vol := range volumes {
-		volumeIdPrefixed := fmt.Sprintf("%s%s", c.volumeBucketPrefix, vol.VolumeId)
-		bucketName := volumeIdPrefixed
-		baseMountPath := filepath.Join(getVolumeMountBasePath(), volumeIdPrefixed)
+		bucketName := fmt.Sprintf("%s%s", c.volumeBucketPrefix, vol.VolumeId)
+		baseMountPath := filepath.Join(getVolumeMountBasePath(), bucketName)
 
 		subpathStr := ""
 		if vol.Subpath != nil {
 			subpathStr = *vol.Subpath
 		}
 
-		if !fuseMountedVolumes[volumeIdPrefixed] {
+		if !fuseMountedVolumes[vol.VolumeId] {
 			err := c.ensureVolumeFuseMounted(ctx, vol.VolumeId, bucketName, baseMountPath)
 			if err != nil {
 				return nil, err
 			}
-			fuseMountedVolumes[volumeIdPrefixed] = true
+			fuseMountedVolumes[vol.VolumeId] = true
 		}
 
 		bindSource := baseMountPath

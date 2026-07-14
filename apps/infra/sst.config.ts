@@ -279,7 +279,10 @@ export default $config({
     const s3AccessRoleArn = $interpolate`arn:aws:iam::${aws.getCallerIdentityOutput().accountId}:role/${s3AccessRoleName}`
 
     // WARNING: Immutable after volumes exist. Changing this orphans existing volume buckets.
-    const volumeBucketPrefix = envOr('VOLUME_BUCKET_PREFIX', `${$app.name}-${$app.stage}-volume-`)
+    const volumeBucketPrefix = requireEnv(
+      'VOLUME_BUCKET_PREFIX',
+      'to preserve volume bucket identity across deployments',
+    )
     const volumeBucketArn = `arn:aws:s3:::${volumeBucketPrefix}*`
     const volumeObjectArn = `arn:aws:s3:::${volumeBucketPrefix}*/*`
     // ─── 4. AUTH ─────────────────────────────────────────────────────────────

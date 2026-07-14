@@ -15,12 +15,19 @@ describe('configuration volume bucket prefix', () => {
     }
   })
 
-  it('loads the default legacy volume bucket prefix', () => {
+  it('requires a volume bucket prefix', () => {
     delete process.env.VOLUME_BUCKET_PREFIX
+    jest.isolateModules(() => {
+      expect(() => require('./configuration')).toThrow('VOLUME_BUCKET_PREFIX is required')
+    })
+  })
+
+  it('loads an explicitly configured volume bucket prefix', () => {
+    process.env.VOLUME_BUCKET_PREFIX = 'boxlite-dev-volume-'
     jest.isolateModules(() => {
       const { configuration } = require('./configuration') as typeof import('./configuration')
 
-      expect(configuration.s3.volumeBucketPrefix).toBe('boxlite-volume-')
+      expect(configuration.s3.volumeBucketPrefix).toBe('boxlite-dev-volume-')
     })
   })
 
