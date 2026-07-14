@@ -21,7 +21,6 @@ import (
 	"github.com/boxlite-ai/runner/pkg/api/dto"
 )
 
-const volumeMountPrefix = "boxlite-volume-"
 const volumeMountRecordDir = ".boxlite-volume-mounts"
 
 type volumeCleanupConfig struct {
@@ -49,17 +48,12 @@ func getVolumeMountBasePath() string {
 }
 
 func (c *Client) getVolumeMounts(ctx context.Context, volumes []dto.VolumeDTO) ([]volumeMount, error) {
-	runnerConfig, err := config.GetConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load runner config for volume mounts: %w", err)
-	}
-
 	volumeMounts := make([]volumeMount, 0, len(volumes))
 	fuseMountedVolumes := make(map[string]bool)
 
 	for _, vol := range volumes {
-		volumeIdPrefixed := fmt.Sprintf("%s%s", volumeMountPrefix, vol.VolumeId)
-		bucketName := fmt.Sprintf("%s%s", runnerConfig.VolumeBucketPrefix, vol.VolumeId)
+		volumeIdPrefixed := fmt.Sprintf("%s%s", c.volumeBucketPrefix, vol.VolumeId)
+		bucketName := volumeIdPrefixed
 		baseMountPath := filepath.Join(getVolumeMountBasePath(), volumeIdPrefixed)
 
 		subpathStr := ""
@@ -327,7 +321,7 @@ func (c *Client) CleanupOrphanedVolumeMounts(ctx context.Context) {
 	}
 	c.lastVolumeCleanup = time.Now()
 
-	mountDirs, err := filepath.Glob(filepath.Join(getVolumeMountBasePath(), volumeMountPrefix+"*"))
+	mountDirs, err := filepath.Glob(filepath.Join(getVolumeMountBasePath(), c.volumeBucketPrefix+"*"))
 	if err != nil || len(mountDirs) == 0 {
 		return
 	}
@@ -385,7 +379,7 @@ func (c *Client) getRecordedVolumeMounts() (map[string]bool, error) {
 
 		for _, path := range record.Paths {
 			cleanPath := normalizeVolumePath(path)
-			if strings.HasPrefix(cleanPath, filepath.Join(getVolumeMountBasePath(), volumeMountPrefix)) {
+			if strings.HasPrefix(cleanPath, filepath.Join(getVolumeMountBasePath(), c.volumeBucketPrefix)) {
 				inUse[cleanPath] = true
 			}
 		}
@@ -396,7 +390,7 @@ func (c *Client) getRecordedVolumeMounts() (map[string]bool, error) {
 
 func (c *Client) unmountAndRemoveDir(ctx context.Context, path string) {
 	mountBasePath := getVolumeMountBasePath()
-	volumeMountPath := filepath.Join(mountBasePath, volumeMountPrefix)
+	volumeMountPath := filepath.Join(mountBasePath, c.volumeBucketPrefix)
 	cleanPath := normalizeVolumePath(path)
 	if !strings.HasPrefix(cleanPath, volumeMountPath) {
 		return
@@ -421,7 +415,7 @@ func (c *Client) unmountAndRemoveDir(ctx context.Context, path string) {
 	}
 
 	timestamp := time.Now().Unix()
-	garbagePath := filepath.Join(mountBasePath, fmt.Sprintf("garbage-%d-%s", timestamp, strings.TrimPrefix(filepath.Base(cleanPath), volumeMountPrefix)))
+	garbagePath := filepath.Join(mountBasePath, fmt.Sprintf("garbage-%d-%s", timestamp, strings.TrimPrefix(filepath.Base(cleanPath), c.volumeBucketPrefix)))
 	c.logger.DebugContext(ctx, "renaming non-empty volume directory", "path", garbagePath)
 	if err := os.Rename(cleanPath, garbagePath); err != nil {
 		c.logger.ErrorContext(ctx, "failed to rename directory", "path", cleanPath, "error", err)

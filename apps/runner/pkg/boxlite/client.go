@@ -33,6 +33,7 @@ type Client struct {
 	awsEndpointUrl     string
 	awsAccessKeyId     string
 	awsSecretAccessKey string
+	volumeBucketPrefix string
 	volumeMutexes      map[string]*sync.Mutex
 	volumeMutexesMutex sync.Mutex
 	volumeCleanupMutex sync.Mutex
@@ -53,6 +54,7 @@ type ClientConfig struct {
 	AWSEndpointUrl               string
 	AWSAccessKeyId               string
 	AWSSecretAccessKey           string
+	VolumeBucketPrefix           string
 	VolumeCleanupInterval        time.Duration
 	VolumeCleanupDryRun          bool
 	VolumeCleanupExclusionPeriod time.Duration
@@ -168,6 +170,10 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 		logger = slog.Default()
 	}
 
+	volumeBucketPrefix := config.VolumeBucketPrefix
+	if volumeBucketPrefix == "" {
+		volumeBucketPrefix = "boxlite-volume-"
+	}
 	return &Client{
 		runtime:            rt,
 		logger:             logger,
@@ -177,6 +183,7 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 		awsEndpointUrl:     config.AWSEndpointUrl,
 		awsAccessKeyId:     config.AWSAccessKeyId,
 		awsSecretAccessKey: config.AWSSecretAccessKey,
+		volumeBucketPrefix: volumeBucketPrefix,
 		volumeMutexes:      make(map[string]*sync.Mutex),
 		volumeCleanup: volumeCleanupConfig{
 			interval:        config.VolumeCleanupInterval,
