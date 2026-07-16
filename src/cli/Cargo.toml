@@ -10,6 +10,8 @@ keywords = ["vm", "sandbox", "cli", "container", "security"]
 categories = ["command-line-utilities"]
 readme = "README.md"
 
+[lints]
+workspace = true
 [[bin]]
 name = "boxlite"
 path = "src/main.rs"

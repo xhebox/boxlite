@@ -17,7 +17,8 @@ coverage\:lcov:
 	@echo "✅ LCOV output: target/coverage/lcov.info"
 
 # Generate coverage for Rust integration tests (requires VM environment).
-coverage\:integration: runtime\:debug
+coverage\:integration: BUILD_PROFILE := debug
+coverage\:integration: runtime
 	@echo "📊 Generating integration test coverage..."
 	@cargo llvm-cov nextest \
 		-p boxlite --test '*' \

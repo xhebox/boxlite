@@ -1,12 +1,18 @@
 #!/bin/bash
-# Fix Go runtime symbol conflicts in libboxlite.a
+# Prepare libboxlite.a for linking into a Go binary.
 #
 # libgvproxy (a Go c-archive) is statically linked into libboxlite.a,
 # bringing Go runtime symbols that conflict with the Go SDK binary's own
 # runtime. This script localizes those symbols so the Go binary's runtime
 # takes precedence.
 #
-# Requires: llvm-objcopy (LLVM 20+ on macOS, LLVM 9+ on Linux)
+# Rust staticlibs intentionally leave native runtime libraries unbundled. On
+# musl that includes libunwind, which cgo cannot discover from rustc's
+# native-static-libs metadata. If the archive needs an unwinder and does not
+# already provide one, merge the toolchain's static libunwind into this
+# Go-specific archive before cgo sees it.
+#
+# Requires: llvm-objcopy (LLVM 20+ on macOS, LLVM 9+ on Linux), ar, nm
 #
 # Usage:
 #   ./fix-go-symbols.sh <path/to/libboxlite.a>
@@ -33,6 +39,8 @@ case "$OS" in
         ;;
     linux)
         OBJCOPY="${LLVM_OBJCOPY:-llvm-objcopy}"
+        AR="${AR:-ar}"
+        NM="${NM:-nm}"
         ;;
     *)
         print_error "Unsupported platform: $(uname -s)"
@@ -41,6 +49,45 @@ case "$OS" in
 esac
 
 require_command "$OBJCOPY" "Install LLVM (brew install llvm on macOS)"
+
+bundle_unwinder() {
+    require_command "$NM" "Install binutils"
+    require_command "$AR" "Install binutils"
+
+    if ! "$NM" -u "$LIB" | awk '{ print $NF }' | grep -q '^_Unwind_'; then
+        return
+    fi
+
+    if "$NM" -g --defined-only "$LIB" | awk '{ print $NF }' | grep -q '^_Unwind_RaiseException$'; then
+        return
+    fi
+
+    local unwind_lib temp_dir merged
+    unwind_lib="$(rustc --print target-libdir)/self-contained/libunwind.a"
+
+    if [ ! -f "$unwind_lib" ]; then
+        unwind_lib="$("${CC:-cc}" --print-file-name=libunwind.a)"
+    fi
+
+    if [ ! -f "$unwind_lib" ]; then
+        return
+    fi
+    temp_dir="$(mktemp -d)"
+    merged="$temp_dir/libboxlite.a"
+    trap 'rm -rf "$temp_dir"' RETURN
+
+    "$AR" -M <<EOF
+CREATE $merged
+ADDLIB $LIB
+ADDLIB $unwind_lib
+SAVE
+END
+EOF
+
+    chmod --reference="$LIB" "$merged"
+    mv "$merged" "$LIB"
+    print_success "Static unwinder bundled from $unwind_lib"
+}
 
 # CGo bridge symbols from embedded libgvproxy conflict with the Go SDK
 # binary's own runtime. Localizing them lets the binary's runtime win.
@@ -62,6 +109,7 @@ case "$OS" in
             --localize-symbol='x_cgo_*' \
             --localize-symbol='crosscall*' \
             "$LIB"
+        bundle_unwinder
         ;;
     macos)
         "$OBJCOPY" \

@@ -9,5 +9,7 @@ repository = "https://github.com/boxlite-ai/boxlite"
 links = "bubblewrap"
 exclude = ["vendor"]
 
+[lints]
+workspace = true
 [build-dependencies]
 num_cpus = "1.16"

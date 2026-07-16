@@ -140,8 +140,10 @@ pub(crate) trait BoxNetworkBackend: Send + Sync {
 }
 
 /// Network backend used when the current runtime does not provide networking.
+#[cfg(feature = "rest")]
 pub(crate) struct UnsupportedNetworkBackend;
 
+#[cfg(feature = "rest")]
 #[async_trait]
 impl BoxNetworkBackend for UnsupportedNetworkBackend {
     async fn tunnel(&self, _target: SocketAddr) -> BoxliteResult<BoxTunnel> {

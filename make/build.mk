@@ -1,4 +1,7 @@
-PHONY_TARGETS += guest shim runtime cli cli\:release skillbox-image build\:apps
+PHONY_TARGETS += guest shim runtime cli skillbox-image build\:apps
+
+BUILD_PROFILE ?= release
+export BUILD_PROFILE
 
 guest:
 	@bash $(SCRIPT_DIR)/build/build-guest.sh
@@ -6,21 +9,13 @@ guest:
 shim:
 	@bash $(SCRIPT_DIR)/build/build-shim.sh
 
-runtime:
-	@bash $(SCRIPT_DIR)/build/build-runtime.sh --profile release
+runtime: guest shim
+	@bash $(SCRIPT_DIR)/build/build-runtime.sh
 
-runtime\:debug:
-	@bash $(SCRIPT_DIR)/build/build-runtime.sh --profile debug
-
-cli: runtime\:debug
-	@echo "🔨 Building boxlite CLI..."
-	@cargo build -p boxlite-cli
-	@echo "✅ CLI built: ./target/debug/boxlite"
-
-cli\:release: runtime
-	@echo "🔨 Building boxlite CLI (release)..."
-	@cargo build -p boxlite-cli --release
-	@echo "✅ CLI built: ./target/release/boxlite"
+cli: runtime
+	@echo "🔨 Building boxlite CLI ($(BUILD_PROFILE))..."
+	@bash $(SCRIPT_DIR)/build/build-cli.sh
+	@echo "✅ CLI built: ./target/$(BUILD_PROFILE)/boxlite"
 
 # Build the apps/ workspace (api, dashboard, runner, proxy, libs…) via the
 # repo's own blessed script (nx run-many --target=build --all). The webpack

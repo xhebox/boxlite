@@ -5,7 +5,7 @@ use std::{
     process::{Child, Stdio},
 };
 
-use crate::jailer::{Jail, JailerBuilder};
+use crate::jailer::{Jail, JailerBuilder, process_env::shim_process_env};
 use crate::runtime::layout::BoxFilesystemLayout;
 use crate::runtime::options::BoxOptions;
 use crate::util::configure_library_env;
@@ -141,14 +141,10 @@ impl<'a> ShimSpawner<'a> {
         // without putting the full InstanceSpec back into /proc/<pid>/cmdline.
         cmd.env("BOXLITE_BOX_ID", self.box_id);
 
-        // Pass debugging environment variables to subprocess
-        if let Ok(rust_log) = std::env::var("RUST_LOG") {
-            cmd.env("RUST_LOG", rust_log);
+        // Pass the centrally allowlisted host environment to the shim.
+        for (name, value) in shim_process_env() {
+            cmd.env(name, value);
         }
-        if let Ok(rust_backtrace) = std::env::var("RUST_BACKTRACE") {
-            cmd.env("RUST_BACKTRACE", rust_backtrace);
-        }
-
         // Keep temp artifacts inside the box-scoped allowlist when using the
         // built-in macOS seatbelt profile. libkrun may create a transient
         // `krun-empty-root-*` under `env::temp_dir()` when booting from block
