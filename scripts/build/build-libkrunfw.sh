@@ -26,7 +26,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
         mkdir -p "$PREBUILT_DIR"
         tar xzf "$TARBALL" -C "$PREBUILT_DIR"
     fi
-    make -C "$PREBUILT_DIR/libkrunfw"
+    make -j -C "$PREBUILT_DIR/libkrunfw"
     install -m 755 \
         "$PREBUILT_DIR/libkrunfw/libkrunfw.5.dylib" \
         "$DEST_DIR/libkrunfw.5.dylib"
@@ -76,7 +76,7 @@ host=$(rustc_host_triple)
 if [[ "$host" == *-musl ]]; then
     kernel=$(kernel_path)
     relative=${kernel#"$SOURCE_DIR/"}
-    make -C "$SOURCE_DIR" "${make_args[@]}" "$relative"
+    make -j -C "$SOURCE_DIR" MAKEFLAGS= "${make_args[@]}" "$relative"
     install -m 755 "$kernel" "$DEST_DIR/libkrunfw.bin"
     exit 0
 fi
@@ -86,5 +86,5 @@ if ! python3 -c 'import elftools.elf.elffile' >/dev/null 2>&1; then
     exit 1
 fi
 
-make -C "$SOURCE_DIR" "${make_args[@]}"
+make -j -C "$SOURCE_DIR" MAKEFLAGS= "${make_args[@]}"
 install -m 755 "$SOURCE_DIR/libkrunfw.so.5.3.0" "$DEST_DIR/libkrunfw.so.5"

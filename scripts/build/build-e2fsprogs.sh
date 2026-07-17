@@ -33,8 +33,8 @@ mkdir -p "$BUILD_DIR" "$DEST_DIR"
         --enable-libblkid
 )
 
-make -C "$BUILD_DIR" libs
-make -C "$BUILD_DIR/misc" mke2fs
-make -C "$BUILD_DIR/debugfs" debugfs
+make -j -C "$BUILD_DIR" libs
+make -j -C "$BUILD_DIR/misc" mke2fs
+make -j -C "$BUILD_DIR/debugfs" debugfs
 install -m 755 "$BUILD_DIR/misc/mke2fs" "$DEST_DIR/mke2fs"
 install -m 755 "$BUILD_DIR/debugfs/debugfs" "$DEST_DIR/debugfs"
