@@ -8,6 +8,15 @@ import { BoxliteError } from '@/api/errors'
 import axios, { AxiosInstance } from 'axios'
 import {
   AutomaticTopUp,
+  BillingAutoReload,
+  BillingOverview,
+  BillingPayment,
+  BillingPaymentSetupResult,
+  BillingPricing,
+  BillingReceiptsPage,
+  BillingReceiptsQuery,
+  BillingTopUpResult,
+  BillingUsageSummary,
   OrganizationEmail,
   OrganizationTier,
   OrganizationUsage,
@@ -20,25 +29,36 @@ import {
 
 export class BillingApiClient {
   private axiosInstance: AxiosInstance
+  private coreAxiosInstance: AxiosInstance
 
-  constructor(apiUrl: string, accessToken: string) {
-    this.axiosInstance = axios.create({
-      baseURL: apiUrl,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
+  constructor(
+    apiUrl: string,
+    accessToken: string,
+    coreApiUrl = apiUrl,
+    onUnauthorized?: (error: unknown) => Promise<never>,
+  ) {
+    const createInstance = (baseURL: string) => {
+      const instance = axios.create({
+        baseURL,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      })
+      instance.interceptors.response.use(
+        (response) => response,
+        (error) => {
+          if (error?.response?.status === 401 && onUnauthorized) {
+            return onUnauthorized(error)
+          }
+          const errorMessage = error.response?.data?.message || error.response?.data || error.message || String(error)
+          throw BoxliteError.fromString(String(errorMessage))
+        },
+      )
+      return instance
+    }
 
-    this.axiosInstance.interceptors.response.use(
-      (response) => {
-        return response
-      },
-      (error) => {
-        const errorMessage = error.response?.data?.message || error.response?.data || error.message || String(error)
-
-        throw BoxliteError.fromString(String(errorMessage))
-      },
-    )
+    this.axiosInstance = createInstance(apiUrl)
+    this.coreAxiosInstance = createInstance(coreApiUrl)
   }
 
   public async getOrganizationUsage(organizationId: string): Promise<OrganizationUsage> {
@@ -53,6 +73,57 @@ export class BillingApiClient {
 
   public async getOrganizationWallet(organizationId: string): Promise<OrganizationWallet> {
     const response = await this.axiosInstance.get(`/organization/${organizationId}/wallet`)
+    return response.data
+  }
+
+  public async getBillingOverview(organizationId: string, from: Date, to: Date): Promise<BillingOverview> {
+    const response = await this.coreAxiosInstance.get(`/organization/${organizationId}/billing/overview`, {
+      params: { from: from.toISOString(), to: to.toISOString() },
+    })
+    return response.data
+  }
+
+  public async getBillingPayment(organizationId: string): Promise<BillingPayment> {
+    const response = await this.coreAxiosInstance.get(`/organization/${organizationId}/billing/payment`)
+    return response.data
+  }
+
+  public async setupBillingPayment(organizationId: string): Promise<BillingPaymentSetupResult> {
+    const response = await this.coreAxiosInstance.post(`/organization/${organizationId}/billing/payment/setup`)
+    return response.data
+  }
+
+  public async updateBillingAutoReload(organizationId: string, autoReload: BillingAutoReload): Promise<void> {
+    await this.coreAxiosInstance.put(`/organization/${organizationId}/billing/auto-reload`, autoReload)
+  }
+
+  public async createBillingTopUp(
+    organizationId: string,
+    amountCents: string,
+    idempotencyKey: string,
+  ): Promise<BillingTopUpResult> {
+    const response = await this.coreAxiosInstance.post(
+      `/organization/${organizationId}/billing/top-ups`,
+      { amountCents },
+      { headers: { 'Idempotency-Key': idempotencyKey } },
+    )
+    return response.data
+  }
+
+  public async getBillingReceipts(organizationId: string, query: BillingReceiptsQuery): Promise<BillingReceiptsPage> {
+    const response = await this.coreAxiosInstance.get(`/organization/${organizationId}/billing/receipts`, {
+      params: query,
+    })
+    return response.data
+  }
+
+  public async getBillingPricing(organizationId: string): Promise<BillingPricing> {
+    const response = await this.coreAxiosInstance.get(`/organization/${organizationId}/billing/pricing`)
+    return response.data
+  }
+
+  public async getBoxBillingUsage(organizationId: string, boxId: string): Promise<BillingUsageSummary> {
+    const response = await this.coreAxiosInstance.get(`/organization/${organizationId}/billing/boxes/${boxId}`)
     return response.data
   }
 

@@ -166,6 +166,20 @@ const configuration = {
   organizationBoxDefaultLimitedNetworkEgress: process.env.ORGANIZATION_BOX_DEFAULT_LIMITED_NETWORK_EGRESS === 'true',
   pylonAppId: process.env.PYLON_APP_ID,
   billingApiUrl: process.env.BILLING_API_URL,
+  billing: {
+    trialGrantCents: parseInt(process.env.BILLING_TRIAL_GRANT_CENTS || '10000', 10),
+    trialDurationDays: parseInt(process.env.BILLING_TRIAL_DURATION_DAYS || '30', 10),
+    enforcementEnabled: process.env.BILLING_ENFORCEMENT_ENABLED === 'true',
+    enforcementRiskWindowSeconds: parseInt(process.env.BILLING_ENFORCEMENT_RISK_WINDOW_SECONDS || '120', 10),
+    paymentProvider:
+      process.env.BILLING_PAYMENT_PROVIDER ||
+      (process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production' ? undefined : 'fake'),
+    stripe: {
+      secretKey: process.env.STRIPE_SECRET_KEY,
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+      previousWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET_PREVIOUS,
+    },
+  },
   analyticsApiUrl: process.env.ANALYTICS_API_URL,
   defaultRunner: {
     domain: process.env.DEFAULT_RUNNER_DOMAIN,
