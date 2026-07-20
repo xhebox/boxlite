@@ -510,7 +510,7 @@ export class BoxController {
   })
   @ApiParam({
     name: 'interval',
-    description: 'Auto-stop interval in minutes (0 to disable)',
+    description: 'Auto-stop interval in minutes (0 to disable). Converted to seconds and stored as auto-pause interval.',
     type: 'number',
   })
   @ApiResponse({
@@ -553,7 +553,7 @@ export class BoxController {
   @ApiParam({
     name: 'interval',
     description:
-      'Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping)',
+      'Auto-delete interval in minutes (negative value or 0 disables). Converted to seconds and stored as auto-delete interval; 0 disables auto-delete.',
     type: 'number',
   })
   @ApiResponse({

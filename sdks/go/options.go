@@ -171,22 +171,25 @@ type Secret struct {
 }
 
 type boxConfig struct {
-	name       string
-	cpus       int
-	memoryMiB  int
-	diskSizeGB int
-	rootfsPath string
-	env        [][2]string
-	volumes    []volumeEntry
-	ports      []PortSpec
-	workDir    string
-	entrypoint []string
-	cmd        []string
-	autoRemove *bool
-	detach     *bool
-	network    *NetworkSpec
-	secrets    []Secret
-	advanced   *AdvancedBoxOptions // nil = runtime defaults; non-nil = caller-owned advanced opts applied via boxlite_options_set_advanced
+	name               string
+	cpus               int
+	memoryMiB          int
+	diskSizeGB         int
+	rootfsPath         string
+	env                [][2]string
+	volumes            []volumeEntry
+	ports              []PortSpec
+	workDir            string
+	entrypoint         []string
+	cmd                []string
+	autoRemove         *bool
+	autoPauseInterval  *uint32
+	autoDeleteInterval *uint32
+	autoResumeEnabled  *bool
+	detach             *bool
+	network            *NetworkSpec
+	secrets            []Secret
+	advanced           *AdvancedBoxOptions // nil = runtime defaults; non-nil = caller-owned advanced opts applied via boxlite_options_set_advanced
 }
 
 type volumeEntry struct {
@@ -293,6 +296,24 @@ func WithSecret(secret Secret) BoxOption {
 	return func(c *boxConfig) {
 		c.secrets = append(c.secrets, secret)
 	}
+}
+
+// WithAutoPauseInterval configures the cloud AutoPause idle TTL in seconds.
+// A value of 0 disables AutoPause. Local runtimes return Unsupported.
+func WithAutoPauseInterval(seconds uint32) BoxOption {
+	return func(c *boxConfig) { c.autoPauseInterval = &seconds }
+}
+
+// WithAutoDeleteInterval configures the cloud AutoDelete TTL in seconds.
+// A value of 0 disables AutoDelete. Local runtimes return Unsupported.
+func WithAutoDeleteInterval(seconds uint32) BoxOption {
+	return func(c *boxConfig) { c.autoDeleteInterval = &seconds }
+}
+
+// WithAutoResumeEnabled configures whether the box automatically resumes when
+// accessed after AutoPause. Defaults to true to preserve existing behavior.
+func WithAutoResumeEnabled(enabled bool) BoxOption {
+	return func(c *boxConfig) { c.autoResumeEnabled = &enabled }
 }
 
 // WithAutoRemove sets whether the box is auto-removed on stop.
@@ -464,6 +485,15 @@ func buildCOptions(image string, cfg *boxConfig) (*C.CBoxliteOptions, error) {
 		C.free(unsafe.Pointer(cName))
 		C.free(unsafe.Pointer(cValue))
 		C.free(unsafe.Pointer(cPlaceholder))
+	}
+	if cfg.autoPauseInterval != nil {
+		C.boxlite_options_set_auto_pause_interval(cOpts, C.uint32_t(*cfg.autoPauseInterval))
+	}
+	if cfg.autoDeleteInterval != nil {
+		C.boxlite_options_set_auto_delete_interval(cOpts, C.uint32_t(*cfg.autoDeleteInterval))
+	}
+	if cfg.autoResumeEnabled != nil {
+		C.boxlite_options_set_auto_resume_enabled(cOpts, boolToCInt(*cfg.autoResumeEnabled))
 	}
 	if cfg.autoRemove != nil {
 		C.boxlite_options_set_auto_remove(cOpts, boolToCInt(*cfg.autoRemove))

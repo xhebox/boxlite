@@ -1,5 +1,9 @@
 # How-to Guides
 
+## Lifecycle
+
+- [AutoPause、AutoResume 与 AutoDelete](./auto-pause-resume.md)
+
 ## Building from Source
 
 ### Prerequisites

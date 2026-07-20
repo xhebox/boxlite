@@ -101,13 +101,17 @@ export interface Box {
      */
     'recoverable'?: boolean;
     /**
-     * Auto-stop interval in minutes (0 means disabled)
+     * Auto-pause interval in seconds (0 means disabled)
      */
-    'autoStopInterval'?: number;
+    'autoPauseInterval'?: number;
     /**
-     * Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping)
+     * Auto-delete interval in seconds (0 means disabled)
      */
     'autoDeleteInterval'?: number;
+    /**
+     * Whether the box should be automatically resumed on proxy access
+     */
+    'autoResumeEnabled'?: boolean;
     /**
      * Array of volumes attached to the box
      */

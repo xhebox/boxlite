@@ -27,13 +27,11 @@ import { AuthContext } from '../common/decorators/auth-context.decorator'
 import { OrganizationAuthContext } from '../common/interfaces/auth-context.interface'
 import { BoxService } from '../box/services/box.service'
 import { RunnerService } from '../box/services/runner.service'
+import { BoxAutoResumeService } from './box-auto-resume.service'
 
-// Caller-side wait cap for the best-effort control-plane start hint. The hint's
-// DB work is itself bounded by a lock_timeout (see conditionalStartForProxy),
-// which aborts the statement and frees the connection on row-lock contention;
-// this race only limits how long *exec* waits on the hint, so the proxy
-// proceeds even if the hint is momentarily slow. Both bounds are 2s.
-const PROXY_START_HINT_TIMEOUT_MS = 2000
+type ProxyActivityPolicy = { activity: boolean; autoResume: boolean }
+const USER_OPERATION: ProxyActivityPolicy = { activity: true, autoResume: true }
+const OBSERVATION_ONLY: ProxyActivityPolicy = { activity: false, autoResume: false }
 
 // Spec-first surface (openapi/box.openapi.yaml). Must stay out of the product
 // spec: @All() expands to the SEARCH verb, which OpenAPI 3.0 cannot express.
@@ -48,6 +46,7 @@ export class BoxliteProxyController {
   constructor(
     private readonly boxService: BoxService,
     private readonly runnerService: RunnerService,
+    private readonly autoResume: BoxAutoResumeService,
   ) {}
 
   @All(':boxId/exec')
@@ -58,8 +57,15 @@ export class BoxliteProxyController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await this.startHint(boxId, authContext)
-    return this.proxyToRunner(authContext, boxId, (runnerBoxId) => `/v1/boxes/${runnerBoxId}/exec`, req, res, next)
+    return this.proxyToRunner(
+      authContext,
+      boxId,
+      (runnerBoxId) => `/v1/boxes/${runnerBoxId}/exec`,
+      req,
+      res,
+      next,
+      USER_OPERATION,
+    )
   }
 
   @All(':boxId/executions/:execId/signal')
@@ -78,6 +84,7 @@ export class BoxliteProxyController {
       req,
       res,
       next,
+      USER_OPERATION,
     )
   }
 
@@ -97,6 +104,7 @@ export class BoxliteProxyController {
       req,
       res,
       next,
+      USER_OPERATION,
     )
   }
 
@@ -116,6 +124,7 @@ export class BoxliteProxyController {
       req,
       res,
       next,
+      USER_OPERATION,
     )
   }
 
@@ -135,6 +144,7 @@ export class BoxliteProxyController {
       req,
       res,
       next,
+      USER_OPERATION,
     )
   }
 
@@ -152,7 +162,6 @@ export class BoxliteProxyController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await this.startHint(boxId, authContext)
     const query = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''
     return this.proxyToRunner(
       authContext,
@@ -161,6 +170,7 @@ export class BoxliteProxyController {
       req,
       res,
       next,
+      USER_OPERATION,
     )
   }
 
@@ -172,36 +182,15 @@ export class BoxliteProxyController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await this.startHint(boxId, authContext)
-    return this.proxyToRunner(authContext, boxId, (runnerBoxId) => `/v1/boxes/${runnerBoxId}/metrics`, req, res, next)
-  }
-
-  /**
-   * Tell the control plane that the proxied call (exec / files / metrics) is
-   * about to auto-start a stopped box in the runtime, so PG agrees and
-   * sync-states does not promptly stop it back.
-   *
-   * - Suspended org → ForbiddenException re-thrown → caller sees 403, proxy
-   *   never runs (same gate as POST /boxes/:id/start).
-   * - Any other failure → swallowed; the proxy proceeds because the hint is
-   *   best-effort and box_sync reconciles state on its next tick.
-   * - Caller-side time-boxed via PROXY_START_HINT_TIMEOUT_MS; the hint's DB work
-   *   is independently bounded by a lock_timeout (conditionalStartForProxy), so
-   *   a contended row aborts at the DB and frees its connection rather than
-   *   waiting out this race detached.
-   */
-  private async startHint(boxId: string, authContext: OrganizationAuthContext) {
-    try {
-      await Promise.race([
-        this.boxService.ensureStartedForProxy(boxId, authContext.organization),
-        new Promise<void>((resolve) => setTimeout(resolve, PROXY_START_HINT_TIMEOUT_MS)),
-      ])
-    } catch (err) {
-      if (err instanceof ForbiddenException) {
-        throw err
-      }
-      this.logger.warn(`ensureStartedForProxy failed for ${boxId}: ${err}`)
-    }
+    return this.proxyToRunner(
+      authContext,
+      boxId,
+      (runnerBoxId) => `/v1/boxes/${runnerBoxId}/metrics`,
+      req,
+      res,
+      next,
+      OBSERVATION_ONLY,
+    )
   }
 
   private async proxyToRunner(
@@ -211,6 +200,7 @@ export class BoxliteProxyController {
     req: Request,
     res: Response,
     next: NextFunction,
+    policy: ProxyActivityPolicy,
     opts?: { ws?: boolean },
   ) {
     const box = await this.boxService.findOneByIdOrName(boxId, authContext.organizationId)
@@ -218,12 +208,18 @@ export class BoxliteProxyController {
       throw new NotFoundException(`Box ${boxId} not found`)
     }
 
-    // Any SDK-initiated proxy
-    // call counts as user activity, so the autostop cron does not reap an
-    // actively used box. Best-effort: never block the proxy on this.
-    this.boxService
-      .updateLastActivityAt(box.id, new Date())
-      .catch((err) => this.logger.warn(`updateLastActivityAt failed for ${box.id}: ${err}`))
+    if (policy.activity) {
+      // Persist activity before the readiness gate. The lifecycle sweeper rechecks
+      // this Redis-buffered timestamp after taking its state lock, closing the
+      // request-vs-AutoPause race without holding a lock through cold start.
+      await this.boxService
+        .updateLastActivityAt(box.id, new Date())
+        .catch((err) => this.logger.warn(`updateLastActivityAt failed for ${box.id}: ${err}`))
+    }
+
+    if (policy.autoResume && box.autoResumeEnabled) {
+      await this.autoResume.ensureReady(box.id, authContext.organization)
+    }
 
     const runner = await this.runnerService.findOne(box.runnerId)
     if (!runner) {

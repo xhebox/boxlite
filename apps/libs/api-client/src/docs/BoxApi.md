@@ -1083,7 +1083,7 @@ const configuration = new Configuration();
 const apiInstance = new BoxApi(configuration);
 
 let boxIdOrName: string; //ID or name of the box (default to undefined)
-let interval: number; //Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping) (default to undefined)
+let interval: number; //Auto-delete interval in minutes (negative value or 0 disables). Converted to seconds and stored as auto-delete interval; 0 disables auto-delete. (default to undefined)
 let xBoxLiteOrganizationID: string; //Use with JWT to specify the organization ID (optional) (default to undefined)
 
 const { status, data } = await apiInstance.setAutoDeleteInterval(
@@ -1098,7 +1098,7 @@ const { status, data } = await apiInstance.setAutoDeleteInterval(
 |Name | Type | Description  | Notes|
 |------------- | ------------- | ------------- | -------------|
 | **boxIdOrName** | [**string**] | ID or name of the box | defaults to undefined|
-| **interval** | [**number**] | Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping) | defaults to undefined|
+| **interval** | [**number**] | Auto-delete interval in minutes (negative value or 0 disables). Converted to seconds and stored as auto-delete interval; 0 disables auto-delete. | defaults to undefined|
 | **xBoxLiteOrganizationID** | [**string**] | Use with JWT to specify the organization ID | (optional) defaults to undefined|
 
 
@@ -1139,7 +1139,7 @@ const configuration = new Configuration();
 const apiInstance = new BoxApi(configuration);
 
 let boxIdOrName: string; //ID or name of the box (default to undefined)
-let interval: number; //Auto-stop interval in minutes (0 to disable) (default to undefined)
+let interval: number; //Auto-stop interval in minutes (0 to disable). Converted to seconds and stored as auto-pause interval. (default to undefined)
 let xBoxLiteOrganizationID: string; //Use with JWT to specify the organization ID (optional) (default to undefined)
 
 const { status, data } = await apiInstance.setAutostopInterval(
@@ -1154,7 +1154,7 @@ const { status, data } = await apiInstance.setAutostopInterval(
 |Name | Type | Description  | Notes|
 |------------- | ------------- | ------------- | -------------|
 | **boxIdOrName** | [**string**] | ID or name of the box | defaults to undefined|
-| **interval** | [**number**] | Auto-stop interval in minutes (0 to disable) | defaults to undefined|
+| **interval** | [**number**] | Auto-stop interval in minutes (0 to disable). Converted to seconds and stored as auto-pause interval. | defaults to undefined|
 | **xBoxLiteOrganizationID** | [**string**] | Use with JWT to specify the organization ID | (optional) defaults to undefined|
 
 

@@ -1051,7 +1051,7 @@ export const BoxApiAxiosParamCreator = function (configuration?: Configuration) 
          * 
          * @summary Set box auto-delete interval
          * @param {string} boxIdOrName ID or name of the box
-         * @param {number} interval Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping)
+         * @param {number} interval Auto-delete interval in minutes (negative value or 0 disables). Converted to seconds and stored as auto-delete interval; 0 disables auto-delete.
          * @param {string} [xBoxLiteOrganizationID] Use with JWT to specify the organization ID
          * @param {*} [options] Override http request option.
          * @throws {RequiredError}
@@ -1099,7 +1099,7 @@ export const BoxApiAxiosParamCreator = function (configuration?: Configuration) 
          * 
          * @summary Set box auto-stop interval
          * @param {string} boxIdOrName ID or name of the box
-         * @param {number} interval Auto-stop interval in minutes (0 to disable)
+         * @param {number} interval Auto-stop interval in minutes (0 to disable). Converted to seconds and stored as auto-pause interval.
          * @param {string} [xBoxLiteOrganizationID] Use with JWT to specify the organization ID
          * @param {*} [options] Override http request option.
          * @throws {RequiredError}
@@ -1624,7 +1624,7 @@ export const BoxApiFp = function(configuration?: Configuration) {
          * 
          * @summary Set box auto-delete interval
          * @param {string} boxIdOrName ID or name of the box
-         * @param {number} interval Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping)
+         * @param {number} interval Auto-delete interval in minutes (negative value or 0 disables). Converted to seconds and stored as auto-delete interval; 0 disables auto-delete.
          * @param {string} [xBoxLiteOrganizationID] Use with JWT to specify the organization ID
          * @param {*} [options] Override http request option.
          * @throws {RequiredError}
@@ -1639,7 +1639,7 @@ export const BoxApiFp = function(configuration?: Configuration) {
          * 
          * @summary Set box auto-stop interval
          * @param {string} boxIdOrName ID or name of the box
-         * @param {number} interval Auto-stop interval in minutes (0 to disable)
+         * @param {number} interval Auto-stop interval in minutes (0 to disable). Converted to seconds and stored as auto-pause interval.
          * @param {string} [xBoxLiteOrganizationID] Use with JWT to specify the organization ID
          * @param {*} [options] Override http request option.
          * @throws {RequiredError}
@@ -1952,7 +1952,7 @@ export const BoxApiFactory = function (configuration?: Configuration, basePath?:
          * 
          * @summary Set box auto-delete interval
          * @param {string} boxIdOrName ID or name of the box
-         * @param {number} interval Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping)
+         * @param {number} interval Auto-delete interval in minutes (negative value or 0 disables). Converted to seconds and stored as auto-delete interval; 0 disables auto-delete.
          * @param {string} [xBoxLiteOrganizationID] Use with JWT to specify the organization ID
          * @param {*} [options] Override http request option.
          * @throws {RequiredError}
@@ -1964,7 +1964,7 @@ export const BoxApiFactory = function (configuration?: Configuration, basePath?:
          * 
          * @summary Set box auto-stop interval
          * @param {string} boxIdOrName ID or name of the box
-         * @param {number} interval Auto-stop interval in minutes (0 to disable)
+         * @param {number} interval Auto-stop interval in minutes (0 to disable). Converted to seconds and stored as auto-pause interval.
          * @param {string} [xBoxLiteOrganizationID] Use with JWT to specify the organization ID
          * @param {*} [options] Override http request option.
          * @throws {RequiredError}
@@ -2277,7 +2277,7 @@ export class BoxApi extends BaseAPI {
      * 
      * @summary Set box auto-delete interval
      * @param {string} boxIdOrName ID or name of the box
-     * @param {number} interval Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping)
+     * @param {number} interval Auto-delete interval in minutes (negative value or 0 disables). Converted to seconds and stored as auto-delete interval; 0 disables auto-delete.
      * @param {string} [xBoxLiteOrganizationID] Use with JWT to specify the organization ID
      * @param {*} [options] Override http request option.
      * @throws {RequiredError}
@@ -2290,7 +2290,7 @@ export class BoxApi extends BaseAPI {
      * 
      * @summary Set box auto-stop interval
      * @param {string} boxIdOrName ID or name of the box
-     * @param {number} interval Auto-stop interval in minutes (0 to disable)
+     * @param {number} interval Auto-stop interval in minutes (0 to disable). Converted to seconds and stored as auto-pause interval.
      * @param {string} [xBoxLiteOrganizationID] Use with JWT to specify the organization ID
      * @param {*} [options] Override http request option.
      * @throws {RequiredError}

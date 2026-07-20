@@ -260,7 +260,7 @@ type BoxAPI interface {
 
 	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
 	@param boxIdOrName ID or name of the box
-	@param interval Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping)
+	@param interval Auto-delete interval in minutes (negative value or 0 disables). Converted to seconds and stored as auto-delete interval; 0 disables auto-delete.
 	@return BoxAPISetAutoDeleteIntervalRequest
 	*/
 	SetAutoDeleteInterval(ctx context.Context, boxIdOrName string, interval float32) BoxAPISetAutoDeleteIntervalRequest
@@ -274,7 +274,7 @@ type BoxAPI interface {
 
 	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
 	@param boxIdOrName ID or name of the box
-	@param interval Auto-stop interval in minutes (0 to disable)
+	@param interval Auto-stop interval in minutes (0 to disable). Converted to seconds and stored as auto-pause interval.
 	@return BoxAPISetAutostopIntervalRequest
 	*/
 	SetAutostopInterval(ctx context.Context, boxIdOrName string, interval float32) BoxAPISetAutostopIntervalRequest
@@ -2748,7 +2748,7 @@ SetAutoDeleteInterval Set box auto-delete interval
 
  @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
  @param boxIdOrName ID or name of the box
- @param interval Auto-delete interval in minutes (negative value means disabled, 0 means delete immediately upon stopping)
+ @param interval Auto-delete interval in minutes (negative value or 0 disables). Converted to seconds and stored as auto-delete interval; 0 disables auto-delete.
  @return BoxAPISetAutoDeleteIntervalRequest
 */
 func (a *BoxAPIService) SetAutoDeleteInterval(ctx context.Context, boxIdOrName string, interval float32) BoxAPISetAutoDeleteIntervalRequest {
@@ -2863,7 +2863,7 @@ SetAutostopInterval Set box auto-stop interval
 
  @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
  @param boxIdOrName ID or name of the box
- @param interval Auto-stop interval in minutes (0 to disable)
+ @param interval Auto-stop interval in minutes (0 to disable). Converted to seconds and stored as auto-pause interval.
  @return BoxAPISetAutostopIntervalRequest
 */
 func (a *BoxAPIService) SetAutostopInterval(ctx context.Context, boxIdOrName string, interval float32) BoxAPISetAutostopIntervalRequest {

@@ -1,5 +1,7 @@
 # Architecture
 
+Related design: [AutoPause / AutoResume / AutoDelete](./auto-pause-resume-design.md)
+
 ## Overview
 
 BoxLite is an embeddable virtual machine runtime that follows the SQLite philosophy: a library that

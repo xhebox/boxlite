@@ -76,6 +76,12 @@ import { BoxLookupCacheInvalidationService } from './box-lookup-cache-invalidati
 import { Region } from '../../region/entities/region.entity'
 import { BoxActivityService } from './box-activity.service'
 import { assertWithinPerBoxLimits } from './per-box-limits'
+import {
+  AUTO_DELETE_DISABLED,
+  AUTO_PAUSE_DISABLED,
+  DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS,
+  DEFAULT_AUTO_RESUME_ENABLED,
+} from '../constants/box-lifecycle.constants'
 
 // TODO(image-rewrite): resource defaults previously came from the removed image subsystem;
 // these mirror the Box entity column defaults until image resolution is rebuilt.
@@ -230,13 +236,14 @@ export class BoxService {
         box.networkAllowList = this.resolveNetworkAllowList(createBoxDto.networkAllowList)
       }
 
-      if (createBoxDto.autoStopInterval !== undefined) {
-        box.autoStopInterval = this.resolveAutoStopInterval(createBoxDto.autoStopInterval)
-      }
-
-      if (createBoxDto.autoDeleteInterval !== undefined) {
-        box.autoDeleteInterval = createBoxDto.autoDeleteInterval
-      }
+      const lifecyclePolicy = this.resolveLifecyclePolicy({
+        autoPauseInterval: createBoxDto.autoPauseInterval,
+        autoDeleteInterval: createBoxDto.autoDeleteInterval,
+        autoResumeEnabled: createBoxDto.autoResumeEnabled,
+      })
+      box.autoPauseInterval = lifecyclePolicy.autoPauseInterval
+      box.autoDeleteInterval = lifecyclePolicy.autoDeleteInterval
+      box.autoResumeEnabled = lifecyclePolicy.autoResumeEnabled
 
       if (createBoxDto.volumes !== undefined) {
         box.volumes = this.resolveVolumes(createBoxDto.volumes)
@@ -286,13 +293,14 @@ export class BoxService {
       createdAt: now,
     }
 
-    if (createBoxDto.autoStopInterval !== undefined) {
-      updateData.autoStopInterval = this.resolveAutoStopInterval(createBoxDto.autoStopInterval)
-    }
-
-    if (createBoxDto.autoDeleteInterval !== undefined) {
-      updateData.autoDeleteInterval = createBoxDto.autoDeleteInterval
-    }
+    const lifecyclePolicy = this.resolveLifecyclePolicy({
+      autoPauseInterval: createBoxDto.autoPauseInterval,
+      autoDeleteInterval: createBoxDto.autoDeleteInterval,
+      autoResumeEnabled: createBoxDto.autoResumeEnabled,
+    })
+    updateData.autoPauseInterval = lifecyclePolicy.autoPauseInterval
+    updateData.autoDeleteInterval = lifecyclePolicy.autoDeleteInterval
+    updateData.autoResumeEnabled = lifecyclePolicy.autoResumeEnabled
 
     if (createBoxDto.networkBlockAll !== undefined) {
       updateData.networkBlockAll = createBoxDto.networkBlockAll
@@ -831,82 +839,34 @@ export class BoxService {
   }
 
   /**
-   * Reflect a proxy-triggered auto-start in the control plane.
+   * Submit or join a proxy-triggered Start intent.
    *
-   * exec / files / metrics on a stopped box all reach `Box::live_state()` in
-   * the runtime, which lazily inits the VM — but nothing tells the API. Left
-   * alone, PG keeps the box at desiredState=STOPPED and sync-states promptly
-   * issues STOP_BOX, undoing the auto-start. Flip desiredState to STARTED —
-   * exactly like start() — so the runner-reported STARTED state agrees and
-   * the box stays up. We never write state directly; the runner remains the
-   * source of truth for it.
-   *
-   * Suspension is a hard wall (same as start()): throws ForbiddenException so
-   * the controller surfaces 403 to the caller and the proxy never runs.
-   *
-   * Otherwise best-effort and idempotent: the proxied call has already (or
-   * will soon) hit the runtime, so DB-side failures are swallowed and
-   * box_sync reconciles state on its next tick.
-   *
-   * On a successful flip emits BoxEvents.STARTED (drives convergence) and
-   * BoxEvents.DESIRED_STATE_UPDATED — the same desired-state event start()
-   * raises via updateWhere, so the notification gateway and analytics see the
-   * STOPPED→STARTED transition for an exec-autostart too.
+   * Only a stable STOPPED box performs the conditional update. Transitional
+   * states are returned unchanged so the caller can wait and retry. Unexpected
+   * database errors propagate; AutoResume must never proxy before readiness.
    */
-  async ensureStartedForProxy(boxIdOrName: string, organization: Organization): Promise<void> {
-    // Suspension check first — same gate as start() (~line 790). Without it,
-    // a suspended org could exec/files/metrics a STOPPED box back to STARTED,
-    // bypassing the start-time guard entirely.
+  async ensureStartedForProxy(boxIdOrName: string, organization: Organization): Promise<Box> {
     this.organizationService.assertOrganizationIsNotSuspended(organization)
-
     const box = await this.findOneByIdOrName(boxIdOrName, organization.id)
-    if (!box) {
-      return
+
+    if (box.state !== BoxState.STOPPED || box.desiredState !== BoxDesiredState.STOPPED || box.pending) {
+      return box
     }
 
-    // Cheap pre-check on the cached snapshot. The repository's conditional
-    // UPDATE re-asserts atomically — this just avoids a no-op round-trip when
-    // the snapshot already shows the box isn't a candidate.
-    if (box.pending || box.state !== BoxState.STOPPED || box.desiredState !== BoxDesiredState.STOPPED) {
-      return
-    }
-
-    let updated: Box | null
-    try {
-      updated = await this.boxRepository.conditionalStartForProxy(box.id, organization.id)
-    } catch (err) {
-      this.logger.warn(`ensureStartedForProxy: unexpected failure for box ${boxIdOrName}: ${err}`)
-      return
-    }
-
-    // Zero rows matched — race lost or the box transitioned out of the
-    // eligible state between snapshot and write. No-op (same semantics as
-    // the old BoxConflictError swallow).
+    const updated = await this.boxRepository.conditionalStartForProxy(box.id, organization.id)
     if (!updated) {
-      return
+      return this.findOneByIdOrName(box.id, organization.id)
     }
 
-    // Emit post-commit (conditionalStartForProxy's transaction has returned),
-    // so listeners never observe an uncommitted desiredState. The flip was
-    // strictly STOPPED→STARTED — the pre-check and the conditional UPDATE both
-    // gate on desiredState=STOPPED.
     this.eventEmitter.emit(BoxEvents.STARTED, new BoxStartedEvent(updated))
     this.eventEmitter.emit(
       BoxEvents.DESIRED_STATE_UPDATED,
       new BoxDesiredStateUpdatedEvent(updated, BoxDesiredState.STOPPED, BoxDesiredState.STARTED),
     )
+    return updated
   }
 
   async stop(boxIdOrName: string, organizationId?: string, force?: boolean): Promise<Box> {
-    // Capture the JS call stack so we can identify the code path that hit
-    // boxService.stop() — the audit log only records the leaf endpoint,
-    // not which internal mechanism (cron / event handler / sync loop) routed
-    // here. Frames below the BoxService entry are the interesting ones.
-    const stack = new Error().stack?.split('\n').slice(2, 8).join(' | ') || '<no stack>'
-    this.logger.warn(
-      `[stop-trace] box=${boxIdOrName} organizationId=${organizationId ?? 'undefined'} force=${force ?? false} caller=${stack}`,
-    )
-
     const box = await this.findOneByIdOrName(boxIdOrName, organizationId)
 
     this.assertBoxNotErrored(box)
@@ -925,7 +885,7 @@ export class BoxService {
 
     const updateData: Partial<Box> = {
       pending: true,
-      desiredState: box.autoDeleteInterval === 0 ? BoxDesiredState.DESTROYED : BoxDesiredState.STOPPED,
+      desiredState: BoxDesiredState.STOPPED,
     }
 
     const updatedBox = await this.boxRepository.updateWhere(box.id, {
@@ -933,15 +893,7 @@ export class BoxService {
       whereCondition: { pending: false, state: box.state },
     })
 
-    this.logger.warn(
-      `[stop-trace] box=${box.id} desiredState set to ${updateData.desiredState} (autoDeleteInterval=${box.autoDeleteInterval})`,
-    )
-
-    if (box.autoDeleteInterval === 0) {
-      this.eventEmitter.emit(BoxEvents.DESTROYED, new BoxDestroyedEvent(updatedBox))
-    } else {
-      this.eventEmitter.emit(BoxEvents.STOPPED, new BoxStoppedEvent(updatedBox, force))
-    }
+    this.eventEmitter.emit(BoxEvents.STOPPED, new BoxStoppedEvent(updatedBox, force))
 
     return updatedBox
   }
@@ -1307,7 +1259,7 @@ export class BoxService {
     const box = await this.findOneByIdOrName(boxIdOrName, organizationId)
 
     const updateData: Partial<Box> = {
-      autoStopInterval: this.resolveAutoStopInterval(interval),
+      autoPauseInterval: this.minutesToSeconds(interval),
     }
 
     return await this.boxRepository.update(box.id, { updateData, entity: box })
@@ -1317,7 +1269,7 @@ export class BoxService {
     const box = await this.findOneByIdOrName(boxIdOrName, organizationId)
 
     const updateData: Partial<Box> = {
-      autoDeleteInterval: interval,
+      autoDeleteInterval: interval <= 0 ? 0 : this.minutesToSeconds(interval),
     }
 
     return await this.boxRepository.update(box.id, { updateData, entity: box })
@@ -1468,12 +1420,36 @@ export class BoxService {
     })
   }
 
-  private resolveAutoStopInterval(autoStopInterval: number): number {
-    if (autoStopInterval < 0) {
-      throw new BadRequestError('Auto-stop interval must be non-negative')
+  private minutesToSeconds(interval: number): number {
+    if (!Number.isInteger(interval) || interval < 0) {
+      throw new BadRequestError('Interval must be a non-negative integer number of minutes')
     }
 
-    return autoStopInterval
+    return interval * 60
+  }
+
+  private resolveLifecyclePolicy(
+    input: {
+      autoPauseInterval?: number
+      autoDeleteInterval?: number
+      autoResumeEnabled?: boolean
+    },
+  ): { autoPauseInterval: number; autoDeleteInterval: number; autoResumeEnabled: boolean } {
+    const autoPauseInterval = input.autoPauseInterval ?? DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS
+    const autoDeleteInterval = input.autoDeleteInterval ?? AUTO_DELETE_DISABLED
+    const autoResumeEnabled = input.autoResumeEnabled ?? DEFAULT_AUTO_RESUME_ENABLED
+
+    if (!Number.isInteger(autoPauseInterval) || autoPauseInterval < AUTO_PAUSE_DISABLED) {
+      throw new BadRequestError('Auto-pause interval must be a non-negative integer number of seconds')
+    }
+    if (!Number.isInteger(autoDeleteInterval) || autoDeleteInterval < AUTO_DELETE_DISABLED) {
+      throw new BadRequestError('Auto-delete interval must be a non-negative integer number of seconds')
+    }
+    if (autoDeleteInterval > 0 && autoDeleteInterval <= autoPauseInterval) {
+      throw new BadRequestError('Auto-delete interval must be greater than auto-pause interval')
+    }
+
+    return { autoPauseInterval, autoDeleteInterval, autoResumeEnabled }
   }
 
   private resolveNetworkAllowList(networkAllowList: string): string {

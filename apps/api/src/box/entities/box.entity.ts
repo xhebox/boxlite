@@ -12,6 +12,11 @@ import { BoxVolume } from '../dto/box.dto'
 import { nanoid } from 'nanoid'
 import { BoxLastActivity } from './box-last-activity.entity'
 import { BOX_ID_LENGTH, BOX_ID_REGEX, generateBoxId } from '../utils/box-id.util'
+import {
+  AUTO_DELETE_DISABLED,
+  DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS,
+  DEFAULT_AUTO_RESUME_ENABLED,
+} from '../constants/box-lifecycle.constants'
 
 @Entity('box')
 @Unique(['organizationId', 'name'])
@@ -146,16 +151,14 @@ export class Box {
   @OneToOne(() => BoxLastActivity, (lastActivity) => lastActivity.box)
   lastActivityAt?: BoxLastActivity
 
-  //  this is the interval in minutes after which the box will be stopped if lastActivityAt is not updated
-  //  if set to 0, auto stop will be disabled
-  @Column({ default: 15, type: 'int' })
-  autoStopInterval: number | undefined = 15
+  @Column({ default: DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS, type: 'int' })
+  autoPauseInterval: number = DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS
 
-  //  this is the interval in minutes after which a continuously stopped workspace will be automatically deleted
-  //  if set to negative value, auto delete will be disabled
-  //  if set to 0, box will be immediately deleted upon stopping
-  @Column({ default: -1, type: 'int' })
-  autoDeleteInterval: number | undefined = -1
+  @Column({ default: AUTO_DELETE_DISABLED, type: 'int' })
+  autoDeleteInterval: number = AUTO_DELETE_DISABLED
+
+  @Column({ default: DEFAULT_AUTO_RESUME_ENABLED, type: 'boolean' })
+  autoResumeEnabled: boolean = DEFAULT_AUTO_RESUME_ENABLED
 
   @Column({ default: false, type: 'boolean' })
   pending: boolean | undefined = false

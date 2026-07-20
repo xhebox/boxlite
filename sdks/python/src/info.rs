@@ -177,6 +177,12 @@ pub(crate) struct PyBoxInfo {
     #[pyo3(get)]
     pub(crate) memory_mib: u32,
     #[pyo3(get)]
+    pub(crate) auto_pause_interval: u32,
+    #[pyo3(get)]
+    pub(crate) auto_delete_interval: u32,
+    #[pyo3(get)]
+    pub(crate) auto_resume_enabled: bool,
+    #[pyo3(get)]
     pub(crate) health_status: PyHealthStatus,
 }
 
@@ -194,6 +200,9 @@ impl PyBoxInfo {
             "image": self.image,
             "cpus": self.cpus,
             "memory_mib": self.memory_mib,
+            "auto_pause_interval": self.auto_pause_interval,
+            "auto_delete_interval": self.auto_delete_interval,
+            "auto_resume_enabled": self.auto_resume_enabled,
             "created_at": self.created_at,
             "health_status": {
                 "state": self.health_status.state.value,
@@ -223,6 +232,9 @@ impl From<BoxInfo> for PyBoxInfo {
             image: info.image,
             cpus: info.cpus,
             memory_mib: info.memory_mib,
+            auto_pause_interval: info.auto_pause_interval,
+            auto_delete_interval: info.auto_delete_interval,
+            auto_resume_enabled: info.auto_resume_enabled,
             health_status,
         }
     }

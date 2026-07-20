@@ -386,6 +386,12 @@ pub(crate) struct PyBoxOptions {
     #[pyo3(get, set)]
     pub(crate) auto_remove: Option<bool>,
     #[pyo3(get, set)]
+    pub(crate) auto_pause_interval: Option<u32>,
+    #[pyo3(get, set)]
+    pub(crate) auto_delete_interval: Option<u32>,
+    #[pyo3(get, set)]
+    pub(crate) auto_resume_enabled: Option<bool>,
+    #[pyo3(get, set)]
     pub(crate) detach: Option<bool>,
     /// Override the image's ENTRYPOINT directive.
     /// When set, completely replaces the image's ENTRYPOINT.
@@ -425,6 +431,9 @@ impl PyBoxOptions {
         network=None,
         ports=vec![],
         auto_remove=None,
+        auto_pause_interval=None,
+        auto_delete_interval=None,
+        auto_resume_enabled=None,
         detach=None,
         entrypoint=None,
         cmd=None,
@@ -445,6 +454,9 @@ impl PyBoxOptions {
         network: Option<PyNetworkSpec>,
         ports: Vec<PyPortSpec>,
         auto_remove: Option<bool>,
+        auto_pause_interval: Option<u32>,
+        auto_delete_interval: Option<u32>,
+        auto_resume_enabled: Option<bool>,
         detach: Option<bool>,
         entrypoint: Option<Vec<String>>,
         cmd: Option<Vec<String>>,
@@ -464,6 +476,9 @@ impl PyBoxOptions {
             network,
             ports,
             auto_remove,
+            auto_pause_interval,
+            auto_delete_interval,
+            auto_resume_enabled,
             detach,
             entrypoint,
             cmd,
@@ -520,6 +535,9 @@ impl TryFrom<PyBoxOptions> for BoxOptions {
             volumes,
             network,
             ports,
+            auto_pause_interval: py_opts.auto_pause_interval,
+            auto_delete_interval: py_opts.auto_delete_interval,
+            auto_resume_enabled: py_opts.auto_resume_enabled,
             entrypoint: py_opts.entrypoint,
             cmd: py_opts.cmd,
             user: py_opts.user,

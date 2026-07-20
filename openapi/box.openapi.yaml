@@ -1492,6 +1492,20 @@ components:
           additionalProperties:
             type: string
           description: User-defined key-value labels
+        auto_pause_interval:
+          type: integer
+          minimum: 0
+          default: 900
+          description: Idle time in seconds before AutoPause; 0 disables AutoPause
+        auto_delete_interval:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Time in seconds after a successful stop before AutoDelete; 0 disables AutoDelete
+        auto_resume_enabled:
+          type: boolean
+          default: true
+          description: Whether the box automatically resumes when accessed after AutoPause
 
     BoxStatus:
       type: string
@@ -1597,6 +1611,20 @@ components:
           type: boolean
           description: Box survives parent process exit
           default: false
+        auto_pause_interval:
+          type: integer
+          minimum: 0
+          default: 900
+          description: Idle time in seconds before AutoPause; 0 disables AutoPause
+        auto_delete_interval:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Time in seconds after a successful stop before AutoDelete; 0 disables AutoDelete
+        auto_resume_enabled:
+          type: boolean
+          default: true
+          description: Whether the box automatically resumes when accessed after AutoPause
         security:
           $ref: "#/components/schemas/SecurityPreset"
 

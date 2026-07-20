@@ -339,6 +339,22 @@ pub struct BoxOptions {
     #[serde(default = "default_auto_remove")]
     pub auto_remove: bool,
 
+    /// Idle time in seconds before AutoPause. `Some(0)` disables AutoPause.
+    /// REST runtimes forward this policy; local runtimes return `Unsupported`.
+    #[serde(default)]
+    pub auto_pause_interval: Option<u32>,
+
+    /// Time in seconds after a successful stop before AutoDelete.
+    /// `Some(0)` disables AutoDelete. REST runtimes forward this policy;
+    /// local runtimes return `Unsupported`.
+    #[serde(default)]
+    pub auto_delete_interval: Option<u32>,
+
+    /// Whether the box should automatically resume when accessed after AutoPause.
+    /// `None` lets the runtime/server pick its default (typically `true`).
+    #[serde(default)]
+    pub auto_resume_enabled: Option<bool>,
+
     /// Whether the box should outlive the process that created it.
     ///
     /// When false (default), the box stops when the runtime that created
@@ -501,6 +517,9 @@ impl Default for BoxOptions {
             network: NetworkSpec::default(),
             ports: Vec::new(),
             auto_remove: default_auto_remove(),
+            auto_pause_interval: None,
+            auto_delete_interval: None,
+            auto_resume_enabled: None,
             detach: default_detach(),
             advanced: AdvancedBoxOptions::default(),
             entrypoint: None,

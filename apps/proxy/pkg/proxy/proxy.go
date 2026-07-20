@@ -37,31 +37,18 @@ type RunnerInfo struct {
 const BOX_AUTH_KEY_HEADER = "X-BoxLite-Preview-Token"
 const BOX_AUTH_KEY_QUERY_PARAM = "BOXLITE_BOX_AUTH_KEY"
 const BOX_AUTH_COOKIE_NAME = "boxlite-box-auth-"
-const SKIP_LAST_ACTIVITY_UPDATE_HEADER = "X-BoxLite-Skip-Last-Activity-Update"
-const ACTIVITY_POLL_STOP_KEY = "boxlite-activity-poll-stop"
 const TERMINAL_PORT = "22222"
-
-// stopActivityPoll retrieves and calls the activity poll stop function from the gin context.
-// This ensures the polling goroutine is stopped when the request (including WebSocket) finishes.
-func stopActivityPoll(ctx *gin.Context) {
-	if stopFn, exists := ctx.Get(ACTIVITY_POLL_STOP_KEY); exists {
-		if fn, ok := stopFn.(func()); ok {
-			fn()
-		}
-	}
-}
 
 type Proxy struct {
 	config       *config.Config
 	secureCookie *securecookie.SecureCookie
 	cookieDomain *string
 
-	apiclient                  *apiclient.APIClient
-	runnerCache                common_cache.ICache[RunnerInfo]
-	boxRunnerCache             common_cache.ICache[RunnerInfo]
-	boxPublicCache             common_cache.ICache[bool]
-	boxAuthKeyValidCache       common_cache.ICache[bool]
-	boxLastActivityUpdateCache common_cache.ICache[bool]
+	apiclient            *apiclient.APIClient
+	runnerCache          common_cache.ICache[RunnerInfo]
+	boxRunnerCache       common_cache.ICache[RunnerInfo]
+	boxPublicCache       common_cache.ICache[bool]
+	boxAuthKeyValidCache common_cache.ICache[bool]
 }
 
 func StartProxy(ctx context.Context, config *config.Config) error {
@@ -95,16 +82,11 @@ func StartProxy(ctx context.Context, config *config.Config) error {
 		if err != nil {
 			return err
 		}
-		proxy.boxLastActivityUpdateCache, err = common_cache.NewRedisCache[bool](config.Redis, "proxy:box-last-activity-update:")
-		if err != nil {
-			return err
-		}
 	} else {
 		proxy.boxRunnerCache = common_cache.NewMapCache[RunnerInfo](ctx)
 		proxy.runnerCache = common_cache.NewMapCache[RunnerInfo](ctx)
 		proxy.boxPublicCache = common_cache.NewMapCache[bool](ctx)
 		proxy.boxAuthKeyValidCache = common_cache.NewMapCache[bool](ctx)
-		proxy.boxLastActivityUpdateCache = common_cache.NewMapCache[bool](ctx)
 	}
 
 	shutdownWg := &sync.WaitGroup{}
@@ -116,7 +98,6 @@ func StartProxy(ctx context.Context, config *config.Config) error {
 		cleanupOnce := sync.Once{}
 		cleanup := func() {
 			cleanupOnce.Do(func() {
-				stopActivityPoll(ctx)
 				shutdownWg.Done()
 			})
 		}

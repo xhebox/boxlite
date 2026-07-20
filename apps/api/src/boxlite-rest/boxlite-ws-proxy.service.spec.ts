@@ -6,6 +6,7 @@
 
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { IncomingMessage } from 'http'
+import { EventEmitter } from 'events'
 import { BoxliteWsProxyService } from './boxlite-ws-proxy.service'
 
 jest.mock('http-proxy-middleware', () => ({
@@ -39,24 +40,46 @@ describe('BoxliteWsProxyService', () => {
     const organizationUserService = {
       findOne: jest.fn(),
     }
+    const organizationService = {
+      findOne: jest.fn().mockImplementation(async (id) => ({ id, suspended: false })),
+    }
+    const boxService = {
+      findOneByIdOrName: jest.fn().mockResolvedValue({ id: 'box-uuid', runnerId: 'runner-1' }),
+      updateLastActivityAt: jest.fn().mockResolvedValue(undefined),
+    }
+    const runnerService = {
+      findOne: jest.fn().mockResolvedValue({ apiUrl: 'http://runner.local', apiKey: 'runner-key' }),
+    }
+    const autoResume = { ensureReady: jest.fn().mockResolvedValue(undefined) }
     const jwtStrategy = {
       verifyToken: jest.fn(),
     }
     const service = new BoxliteWsProxyService(
       apiKeyService as never,
       organizationUserService as never,
-      {} as never,
-      {} as never,
+      organizationService as never,
+      boxService as never,
+      runnerService as never,
+      autoResume as never,
       jwtStrategy as never,
     ) as unknown as {
-      authenticate: (req: IncomingMessage, urlTenant?: string) => Promise<{ organizationId: string } | null>
+      authenticate: (req: IncomingMessage, urlTenant?: string) => Promise<{ organization: { id: string } } | null>
     }
 
-    return { service, apiKeyService, organizationUserService, jwtStrategy }
+    return {
+      service,
+      apiKeyService,
+      organizationUserService,
+      organizationService,
+      boxService,
+      runnerService,
+      autoResume,
+      jwtStrategy,
+    }
   }
 
   it('rewrites public box ids to internal box ids before proxying attach upgrades to the runner', () => {
-    new BoxliteWsProxyService({} as never, {} as never, {} as never, {} as never, {} as never)
+    new BoxliteWsProxyService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never)
 
     const proxyOptions = jest.mocked(createProxyMiddleware).mock.calls[0][0]
     const pathRewrite = proxyOptions.pathRewrite as (path: string, req: unknown) => string
@@ -70,6 +93,43 @@ describe('BoxliteWsProxyService', () => {
     )
   })
 
+  it('records websocket activity only after real client data arrives', () => {
+    const { boxService } = buildAuthHarness()
+    const proxyOptions = jest.mocked(createProxyMiddleware).mock.calls.at(-1)?.[0]
+    const proxyReqWs = proxyOptions?.on?.proxyReqWs as (...args: any[]) => void
+    const socket = new EventEmitter()
+    const req = { __boxliteRunnerBoxId: 'box-uuid', __boxliteRunner: { apiKey: 'runner-key' } }
+
+    proxyReqWs({ setHeader: jest.fn() }, req, socket)
+    expect(boxService.updateLastActivityAt).not.toHaveBeenCalled()
+
+    socket.emit('data', Buffer.from('websocket frame'))
+    expect(boxService.updateLastActivityAt).toHaveBeenCalledWith('box-uuid', expect.any(Date))
+  })
+
+  it('does not upgrade the websocket when strict AutoResume fails', async () => {
+    const { service, apiKeyService, organizationUserService, autoResume } = buildAuthHarness()
+    apiKeyService.getApiKeyByValue.mockResolvedValue({
+      organizationId: 'org-1',
+      userId: 'user-1',
+      expiresAt: null,
+    })
+    organizationUserService.findOne.mockResolvedValue({ organizationId: 'org-1', userId: 'user-1' })
+    autoResume.ensureReady.mockRejectedValue(new Error('start failed'))
+    const socket = { write: jest.fn(), destroy: jest.fn() }
+    const proxyHandler = jest.mocked(createProxyMiddleware).mock.results.at(-1)?.value
+
+    await (service as unknown as BoxliteWsProxyService).upgrade(
+      authRequest('blk_live_test'),
+      socket as never,
+      Buffer.alloc(0),
+    )
+
+    expect(autoResume.ensureReady).toHaveBeenCalledWith('box-uuid', expect.objectContaining({ id: 'org-1' }))
+    expect(proxyHandler.upgrade).not.toHaveBeenCalled()
+    expect(socket.destroy).toHaveBeenCalled()
+  })
+
   it('authenticates API key bearer tokens for websocket attach', async () => {
     const { service, apiKeyService, organizationUserService, jwtStrategy } = buildAuthHarness()
     apiKeyService.getApiKeyByValue.mockResolvedValue({
@@ -79,7 +139,9 @@ describe('BoxliteWsProxyService', () => {
     })
     organizationUserService.findOne.mockResolvedValue({ organizationId: 'org-1', userId: 'user-1' })
 
-    await expect(service.authenticate(authRequest('blk_live_test'))).resolves.toEqual({ organizationId: 'org-1' })
+    await expect(service.authenticate(authRequest('blk_live_test'))).resolves.toEqual({
+      organization: { id: 'org-1', suspended: false },
+    })
     expect(organizationUserService.findOne).toHaveBeenCalledWith('org-1', 'user-1')
     expect(jwtStrategy.verifyToken).not.toHaveBeenCalled()
   })
@@ -90,7 +152,9 @@ describe('BoxliteWsProxyService', () => {
     jwtStrategy.verifyToken.mockResolvedValue({ sub: 'user-1', email: 'dev@acme.test' })
     organizationUserService.findOne.mockResolvedValue({ organizationId: 'org-1', userId: 'user-1' })
 
-    await expect(service.authenticate(authRequest(jwt), 'org-1')).resolves.toEqual({ organizationId: 'org-1' })
+    await expect(service.authenticate(authRequest(jwt), 'org-1')).resolves.toEqual({
+      organization: { id: 'org-1', suspended: false },
+    })
     expect(jwtStrategy.verifyToken).toHaveBeenCalledWith(jwt)
     expect(organizationUserService.findOne).toHaveBeenCalledWith('org-1', 'user-1')
   })

@@ -2173,7 +2173,8 @@ paths:
         schema:
           type: string
         style: simple
-      - description: Auto-stop interval in minutes (0 to disable)
+      - description: Auto-stop interval in minutes (0 to disable). Converted to seconds
+          and stored as auto-pause interval.
         explode: false
         in: path
         name: interval
@@ -2217,8 +2218,8 @@ paths:
         schema:
           type: string
         style: simple
-      - description: "Auto-delete interval in minutes (negative value means disabled,\
-          \ 0 means delete immediately upon stopping)"
+      - description: Auto-delete interval in minutes (negative value or 0 disables).
+          Converted to seconds and stored as auto-delete interval; 0 disables auto-delete.
         explode: false
         in: path
         name: interval
@@ -6370,8 +6371,9 @@ components:
         desiredState: destroyed
         errorReason: The box is not running
         recoverable: true
-        autoStopInterval: 30
-        autoDeleteInterval: 30
+        autoPauseInterval: 900
+        autoDeleteInterval: 604800
+        autoResumeEnabled: true
         volumes:
         - volumeId: volume123
           mountPath: /data
@@ -6471,15 +6473,18 @@ components:
           description: Whether the box error is recoverable.
           example: true
           type: boolean
-        autoStopInterval:
-          description: Auto-stop interval in minutes (0 means disabled)
-          example: 30
-          type: number
+        autoPauseInterval:
+          description: Auto-pause interval in seconds (0 means disabled)
+          example: 900
+          type: integer
         autoDeleteInterval:
-          description: "Auto-delete interval in minutes (negative value means disabled,\
-            \ 0 means delete immediately upon stopping)"
-          example: 30
-          type: number
+          description: Auto-delete interval in seconds (0 means disabled)
+          example: 604800
+          type: integer
+        autoResumeEnabled:
+          description: Whether the box should be automatically resumed on proxy access
+          example: true
+          type: boolean
         volumes:
           description: Array of volumes attached to the box
           items:
@@ -6554,8 +6559,9 @@ components:
           desiredState: destroyed
           errorReason: The box is not running
           recoverable: true
-          autoStopInterval: 30
-          autoDeleteInterval: 30
+          autoPauseInterval: 900
+          autoDeleteInterval: 604800
+          autoResumeEnabled: true
           volumes:
           - volumeId: volume123
             mountPath: /data
@@ -6590,8 +6596,9 @@ components:
           desiredState: destroyed
           errorReason: The box is not running
           recoverable: true
-          autoStopInterval: 30
-          autoDeleteInterval: 30
+          autoPauseInterval: 900
+          autoDeleteInterval: 604800
+          autoResumeEnabled: true
           volumes:
           - volumeId: volume123
             mountPath: /data

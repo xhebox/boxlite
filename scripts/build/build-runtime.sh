@@ -74,7 +74,7 @@ cargo_messages=$(mktemp)
 trap 'rm -f "$cargo_messages"' EXIT INT TERM
 cargo "${cargo_args[@]}" >"$cargo_messages"
 
-runtime_src=$(sed -n '/"reason":"build-script-executed"/ { /\/src\/boxlite#/ { s/.*"out_dir":"\([^"]*\)".*/\1/p; } }' "$cargo_messages" | tail -1)
+runtime_src=$(grep '"reason":"build-script-executed"' "$cargo_messages" | grep '/src/boxlite#' | sed -n -E 's/.*"out_dir":"([^"]*)".*/\1/p' | tail -1)
 if [ -z "$runtime_src" ] || [ ! -d "$runtime_src/runtime" ]; then
     echo "Cargo did not report a BoxLite runtime directory" >&2
     exit 1

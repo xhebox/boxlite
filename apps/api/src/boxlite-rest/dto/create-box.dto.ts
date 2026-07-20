@@ -101,6 +101,20 @@ export class CreateBoxDto {
   detach?: boolean
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  auto_pause_interval?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  auto_delete_interval?: number
+
+  @IsOptional()
+  @IsBoolean()
+  auto_resume_enabled?: boolean
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => NetworkSpecDto)
   network?: NetworkSpecDto

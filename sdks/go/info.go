@@ -23,15 +23,18 @@ const (
 
 // BoxInfo holds information about a box.
 type BoxInfo struct {
-	ID        string
-	Name      string
-	Image     string
-	State     State
-	Running   bool
-	PID       int
-	CPUs      int
-	MemoryMiB int
-	CreatedAt time.Time
+	ID                 string
+	Name               string
+	Image              string
+	State              State
+	Running            bool
+	PID                int
+	CPUs               int
+	MemoryMiB          int
+	AutoPauseInterval  uint32
+	AutoDeleteInterval uint32
+	AutoResumeEnabled  bool
+	CreatedAt          time.Time
 }
 
 // Info returns information about the box.
@@ -112,15 +115,18 @@ func (r *Runtime) GetInfo(ctx context.Context, idOrName string) (*BoxInfo, error
 func cBoxInfoToGo(info *C.CBoxInfo) BoxInfo {
 	pid := int(info.pid)
 	return BoxInfo{
-		ID:        cString(info.id),
-		Name:      cString(info.name),
-		Image:     cString(info.image),
-		State:     State(cString(info.status)),
-		Running:   info.running != 0,
-		PID:       pid,
-		CPUs:      int(info.cpus),
-		MemoryMiB: int(info.memory_mib),
-		CreatedAt: time.Unix(int64(info.created_at), 0),
+		ID:                 cString(info.id),
+		Name:               cString(info.name),
+		Image:              cString(info.image),
+		State:              State(cString(info.status)),
+		Running:            info.running != 0,
+		PID:                pid,
+		CPUs:               int(info.cpus),
+		MemoryMiB:          int(info.memory_mib),
+		AutoPauseInterval:  uint32(info.auto_pause_interval),
+		AutoDeleteInterval: uint32(info.auto_delete_interval),
+		AutoResumeEnabled:  info.auto_resume_enabled != 0,
+		CreatedAt:          time.Unix(int64(info.created_at), 0),
 	}
 }
 

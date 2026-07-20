@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toBoxApiCreateRequest } from './cloudBox'
+import { toBoxApiCreateRequest, validateLifecyclePolicy } from './cloudBox'
 
 describe('toBoxApiCreateRequest', () => {
   it('converts dashboard GiB memory into Box API MiB', () => {
@@ -29,8 +29,46 @@ describe('toBoxApiCreateRequest', () => {
     expect(request).not.toHaveProperty('public')
   })
 
+  it('maps lifecycle seconds to the Box API wire fields', () => {
+    const request = toBoxApiCreateRequest({
+      autoPauseIntervalSeconds: 1800,
+      autoDeleteInterval: 604800,
+    })
+
+    expect(request.auto_pause_interval).toBe(1800)
+    expect(request.auto_delete_interval).toBe(604800)
+    expect(request.auto_resume_enabled).toBe(true)
+  })
+
+  it('maps auto-resume enabled to the Box API wire field', () => {
+    const enabledRequest = toBoxApiCreateRequest({ autoResumeEnabled: true })
+    expect(enabledRequest.auto_resume_enabled).toBe(true)
+
+    const disabledRequest = toBoxApiCreateRequest({ autoResumeEnabled: false })
+    expect(disabledRequest.auto_resume_enabled).toBe(false)
+  })
+
   it('leaves memory undefined when no resources are given', () => {
     expect(toBoxApiCreateRequest({}).memory_mib).toBeUndefined()
     expect(toBoxApiCreateRequest().memory_mib).toBeUndefined()
+  })
+})
+
+describe('validateLifecyclePolicy', () => {
+  it('accepts disabled policies and a delete deadline after the pause deadline', () => {
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 0, autoDeleteInterval: 0 })).toBeNull()
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 900, autoDeleteInterval: 3600 })).toBeNull()
+  })
+
+  it('rejects invalid sentinels and delete deadlines that do not follow pause', () => {
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: -1, autoDeleteInterval: 0 })).toMatch(
+      /Auto-pause/,
+    )
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 900, autoDeleteInterval: -1 })).toMatch(
+      /Auto-delete/,
+    )
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 900, autoDeleteInterval: 900 })).toMatch(
+      /greater than/,
+    )
   })
 })

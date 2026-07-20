@@ -1611,9 +1611,19 @@ impl std::fmt::Debug for RuntimeImpl {
 /// Trait methods use `&self`. This newtype holds the Arc as a field to bridge the gap.
 pub(crate) struct LocalRuntime(pub(crate) SharedRuntimeImpl);
 
+fn reject_local_lifecycle_policy(options: &BoxOptions) -> BoxliteResult<()> {
+    if options.auto_pause_interval.is_some() || options.auto_delete_interval.is_some() {
+        return Err(BoxliteError::Unsupported(
+            "AutoPause and AutoDelete lifecycle policies are only supported by REST runtimes"
+                .into(),
+        ));
+    }
+    Ok(())
+}
 #[async_trait::async_trait]
 impl super::backend::RuntimeBackend for LocalRuntime {
     async fn create(&self, options: BoxOptions, name: Option<String>) -> BoxliteResult<LiteBox> {
+        reject_local_lifecycle_policy(&options)?;
         self.0.create(options, name).await
     }
 
@@ -1622,6 +1632,7 @@ impl super::backend::RuntimeBackend for LocalRuntime {
         options: BoxOptions,
         name: Option<String>,
     ) -> BoxliteResult<(LiteBox, bool)> {
+        reject_local_lifecycle_policy(&options)?;
         self.0.get_or_create(options, name).await
     }
 
@@ -1716,6 +1727,24 @@ mod tests {
     use crate::runtime::options::RootfsSpec;
     use tempfile::TempDir;
 
+    #[test]
+    fn local_runtime_rejects_explicit_lifecycle_policy() {
+        let mut options = BoxOptions::default();
+        assert!(reject_local_lifecycle_policy(&options).is_ok());
+
+        options.auto_pause_interval = Some(0);
+        assert!(matches!(
+            reject_local_lifecycle_policy(&options),
+            Err(BoxliteError::Unsupported(_))
+        ));
+
+        options.auto_pause_interval = None;
+        options.auto_delete_interval = Some(3600);
+        assert!(matches!(
+            reject_local_lifecycle_policy(&options),
+            Err(BoxliteError::Unsupported(_))
+        ));
+    }
     /// Create a RuntimeImpl with isolated temp directory.
     fn create_test_runtime() -> (SharedRuntimeImpl, TempDir) {
         let temp_dir = TempDir::new_in("/tmp").expect("Failed to create temp dir");

@@ -12,11 +12,15 @@ import { CreateBoxDialog, resolvePerBoxLimits } from './CreateBoxDialog'
 // Mutable org returned by the mocked hook; each test sets `state.org`.
 const state = vi.hoisted(() => ({ org: null as unknown }))
 
+const mutationMocks = vi.hoisted(() => ({
+  createBox: vi.fn(),
+}))
+
 vi.mock('@/hooks/useSelectedOrganization', () => ({
   useSelectedOrganization: () => ({ selectedOrganization: state.org }),
 }))
 vi.mock('@/hooks/mutations/useCreateBoxMutation', () => ({
-  useCreateBoxMutation: () => ({ mutateAsync: vi.fn() }),
+  useCreateBoxMutation: () => ({ mutateAsync: mutationMocks.createBox }),
 }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -213,5 +217,37 @@ describe('CreateBoxDialog per-org resource cap', () => {
 
     expect(input.value).toBe('3')
     expect(document.body.textContent).not.toContain('support@boxlite.ai')
+  })
+
+  it('defaults auto-resume to enabled and submits the toggle state with create params', async () => {
+    await renderOpen()
+
+    const name = nameInput()
+    expect(name).toBeTruthy()
+    if (!name) throw new Error('expected name input to be rendered')
+    await act(async () => typeInto(name, 'resume-test'))
+
+    const autoResumeSwitch = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Auto-resume on proxy access"]',
+    )
+    expect(autoResumeSwitch).toBeTruthy()
+    expect(autoResumeSwitch?.getAttribute('data-state')).toBe('checked')
+
+    await act(async () => autoResumeSwitch?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flush()
+    expect(autoResumeSwitch?.getAttribute('data-state')).toBe('unchecked')
+
+    const createButton = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'Create Box',
+    )
+    await act(async () => createButton?.click())
+    await flush()
+
+    expect(mutationMocks.createBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'resume-test',
+        autoResumeEnabled: false,
+      }),
+    )
   })
 })

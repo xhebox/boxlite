@@ -21,6 +21,12 @@ export type BoxApiNetworkSpec = {
   allow_net?: string[]
 }
 
+export type LifecyclePolicy = {
+  autoPauseIntervalSeconds: number
+  autoDeleteInterval: number
+  autoResumeEnabled?: boolean
+}
+
 export type CreateBoxParams = {
   name?: string
   image?: string
@@ -28,6 +34,9 @@ export type CreateBoxParams = {
   envVars?: Record<string, string>
   network?: BoxApiNetworkSpec
   resources?: Resources
+  autoPauseIntervalSeconds?: number
+  autoDeleteInterval?: number
+  autoResumeEnabled?: boolean
 }
 
 // Request body shape defined by openapi/box.openapi.yaml CreateBoxRequest.
@@ -40,6 +49,9 @@ export type BoxApiCreateRequest = {
   env?: Record<string, string>
   user?: string
   network?: BoxApiNetworkSpec
+  auto_pause_interval?: number
+  auto_delete_interval?: number
+  auto_resume_enabled?: boolean
 }
 
 export type BoxApiBoxResponse = {
@@ -52,6 +64,9 @@ export type BoxApiBoxResponse = {
   cpus: number
   memory_mib: number
   labels: Record<string, string>
+  auto_pause_interval: number
+  auto_delete_interval: number
+  auto_resume_enabled?: boolean
 }
 
 export function toBoxApiCreateRequest(params?: CreateBoxParams): BoxApiCreateRequest {
@@ -66,7 +81,31 @@ export function toBoxApiCreateRequest(params?: CreateBoxParams): BoxApiCreateReq
     memory_mib: p.resources?.memory !== undefined ? p.resources.memory * 1024 : undefined,
     disk_size_gb: p.resources?.disk,
     network: p.network,
+    auto_pause_interval: p.autoPauseIntervalSeconds,
+    auto_delete_interval: p.autoDeleteInterval,
+    auto_resume_enabled: p.autoResumeEnabled ?? true,
   }
+}
+
+export function validateLifecyclePolicy(policy: LifecyclePolicy): string | null {
+  if (!Number.isInteger(policy.autoPauseIntervalSeconds) || policy.autoPauseIntervalSeconds < 0) {
+    return 'Auto-pause must be a non-negative integer number of seconds.'
+  }
+  if (!Number.isInteger(policy.autoDeleteInterval) || policy.autoDeleteInterval < 0) {
+    return 'Auto-delete must be 0 (disabled) or a positive integer number of seconds.'
+  }
+  if (policy.autoDeleteInterval > 0 && policy.autoDeleteInterval <= policy.autoPauseIntervalSeconds) {
+    return 'Auto-delete must be greater than auto-pause.'
+  }
+  return null
+}
+
+export function formatLifecycleSeconds(seconds: number): string {
+  if (seconds === 0) return 'Disabled'
+  if (seconds % 86400 === 0) return `${seconds / 86400}d`
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`
+  if (seconds % 60 === 0) return `${seconds / 60}m`
+  return `${seconds}s`
 }
 
 function boxesBasePath(organizationId: string): string {
