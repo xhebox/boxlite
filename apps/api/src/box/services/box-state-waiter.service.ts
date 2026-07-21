@@ -42,7 +42,13 @@ export class BoxStateWaiterService implements OnModuleDestroy {
         this.logger.error('Failed to parse box state updated event:', error)
       }
     })
-    this.subscription = this.redisSubscriber.subscribe(BOX_EVENT_CHANNEL).then(() => undefined)
+    this.subscription = this.redisSubscriber
+      .subscribe(BOX_EVENT_CHANNEL)
+      .then(() => undefined)
+      .catch((error) => {
+        this.subscription = undefined
+        throw error
+      })
     return this.subscription
   }
 
@@ -79,7 +85,11 @@ export class BoxStateWaiterService implements OnModuleDestroy {
         if (finished) return
         finished = true
         cleanup()
-        resolve(await this.boxService.toBoxDto(eventBox))
+        try {
+          resolve(await this.boxService.toBoxDto(eventBox))
+        } catch (error) {
+          reject(error)
+        }
       }
       const fail = (error: unknown) => {
         if (finished) return

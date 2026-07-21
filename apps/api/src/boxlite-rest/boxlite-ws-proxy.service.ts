@@ -119,7 +119,9 @@ export class BoxliteWsProxyService {
         this.respondAndClose(socket, 404, 'Not Found')
         return
       }
-      await this.autoResume.ensureReady(box.id, auth.organization)
+      if (box.autoResumeEnabled) {
+        await this.autoResume.ensureReady(box.id, auth.organization)
+      }
       // Mirror legacy toolbox path — opening a WS attach is user activity,
       // so the autostop cron does not reap a session that's still connected.
       // Best-effort: do not fail the upgrade if this errors.

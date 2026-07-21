@@ -99,6 +99,8 @@ export class BoxManager implements TrackableJobExecutions, OnApplicationShutdown
             .andWhere(
               'COALESCE(activity."lastActivityAt", box."updatedAt") < NOW() - INTERVAL \'1 second\' * box."autoPauseInterval"',
             )
+            .orderBy('COALESCE(activity."lastActivityAt", box."updatedAt")', 'ASC')
+            .limit(100)
             .getMany()
 
           await Promise.all(
@@ -184,6 +186,7 @@ export class BoxManager implements TrackableJobExecutions, OnApplicationShutdown
             .andWhere('activity."lastActivityAt" IS NOT NULL')
             .andWhere('activity."lastActivityAt" < NOW() - INTERVAL \'1 second\' * box."autoDeleteInterval"')
             .orderBy('activity."lastActivityAt"', 'ASC')
+            .limit(100)
             .getMany()
 
           await Promise.all(

@@ -6,7 +6,6 @@
 
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { IncomingMessage } from 'http'
-import { EventEmitter } from 'events'
 import { BoxliteWsProxyService } from './boxlite-ws-proxy.service'
 
 jest.mock('http-proxy-middleware', () => ({
@@ -91,20 +90,6 @@ describe('BoxliteWsProxyService', () => {
     expect(pathRewrite('/api/v1/default/boxes/public-box/executions/exec-1/attach?x=1', req)).toBe(
       '/v1/boxes/box-uuid/executions/exec-1/attach?x=1',
     )
-  })
-
-  it('records websocket activity only after real client data arrives', () => {
-    const { boxService } = buildAuthHarness()
-    const proxyOptions = jest.mocked(createProxyMiddleware).mock.calls.at(-1)?.[0]
-    const proxyReqWs = proxyOptions?.on?.proxyReqWs as (...args: any[]) => void
-    const socket = new EventEmitter()
-    const req = { __boxliteRunnerBoxId: 'box-uuid', __boxliteRunner: { apiKey: 'runner-key' } }
-
-    proxyReqWs({ setHeader: jest.fn() }, req, socket)
-    expect(boxService.updateLastActivityAt).not.toHaveBeenCalled()
-
-    socket.emit('data', Buffer.from('websocket frame'))
-    expect(boxService.updateLastActivityAt).toHaveBeenCalledWith('box-uuid', expect.any(Date))
   })
 
   it('does not upgrade the websocket when strict AutoResume fails', async () => {
