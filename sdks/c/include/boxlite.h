@@ -580,6 +580,7 @@ void boxlite_options_add_secret(CBoxliteOptions *opts,
                                 const char *const *hosts,
                                 int hosts_count);
 
+// Deprecated: use boxlite_options_set_auto_delete_interval.
 void boxlite_options_set_auto_remove(CBoxliteOptions *opts, int val);
 
 void boxlite_options_set_auto_pause_interval(CBoxliteOptions *opts, uint32_t seconds);

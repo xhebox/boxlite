@@ -328,25 +328,18 @@ pub struct BoxOptions {
     pub volumes: Vec<VolumeSpec>,
     pub network: NetworkSpec,
     pub ports: Vec<PortSpec>,
-    /// Automatically remove box when stopped.
-    ///
-    /// When true (default), the box is removed from the database and its
-    /// files are deleted when `stop()` is called. This is similar to
-    /// Docker's `--rm` flag.
-    ///
-    /// When false, the box is preserved after stop and can be restarted
-    /// with `runtime.get(box_id)`.
-    #[serde(default = "default_auto_remove")]
-    pub auto_remove: bool,
-
     /// Idle time in seconds before AutoPause. `Some(0)` disables AutoPause.
-    /// REST runtimes forward this policy; local runtimes return `Unsupported`.
+    /// Only REST runtimes implement AutoPause; local runtimes return
+    /// `Unsupported`.
     #[serde(default)]
     pub auto_pause: Option<u32>,
 
     /// Time in seconds after a successful stop before AutoDelete.
-    /// `Some(0)` disables AutoDelete. REST runtimes forward this policy;
-    /// local runtimes return `Unsupported`.
+    ///
+    /// - `Some(0)`: keep the box after stop.
+    /// - `Some(n>0)`: REST runtimes delete after `n` seconds; local runtimes
+    ///   remove immediately on stop because they have no sweeper.
+    /// - `None` (default): preserve the historical remove-on-stop behavior.
     #[serde(default)]
     pub auto_delete: Option<u32>,
 
@@ -496,10 +489,6 @@ impl std::fmt::Display for Secret {
     }
 }
 
-fn default_auto_remove() -> bool {
-    true
-}
-
 fn default_detach() -> bool {
     false
 }
@@ -516,7 +505,6 @@ impl Default for BoxOptions {
             volumes: Vec::new(),
             network: NetworkSpec::default(),
             ports: Vec::new(),
-            auto_remove: default_auto_remove(),
             auto_pause: None,
             auto_delete: None,
             auto_resume: None,
@@ -532,21 +520,24 @@ impl Default for BoxOptions {
 }
 
 impl BoxOptions {
+    /// Whether the box is removed when it stops.
+    ///
+    /// `Some(v>0)` removes, `Some(0)` keeps, and `None` preserves the
+    /// historical remove-on-stop default.
+    pub(crate) fn removes_on_stop(&self) -> bool {
+        self.auto_delete.map_or(true, |interval| interval > 0)
+    }
+
     /// Sanitize and validate options.
     ///
     /// Validates option combinations:
-    /// - `auto_remove=true` with `detach=true` is invalid (detached boxes need manual lifecycle control)
+    /// - remove-on-stop (`auto_delete` unset or `>0`) with `detach=true` is invalid
     /// - `advanced.isolate_mounts=true` is only supported on Linux
     pub fn sanitize(&self) -> BoxliteResult<()> {
-        // Validate auto_remove + detach combination
-        // A detached box that auto-removes doesn't make practical sense:
-        // - detach=true: box survives parent exit
-        // - auto_remove=true: box removed on stop
-        // This combination is confusing - detached boxes should have manual lifecycle control
-        if self.auto_remove && self.detach {
+        if self.removes_on_stop() && self.detach {
             return Err(boxlite_shared::errors::BoxliteError::Config(
-                "auto_remove=true is incompatible with detach=true. \
-                 Detached boxes should use auto_remove=false for manual lifecycle control."
+                "remove-on-stop is incompatible with detach=true. Detached boxes should use \
+                 auto_delete=0 for manual lifecycle control."
                     .to_string(),
             ));
         }
@@ -748,7 +739,7 @@ mod tests {
     #[test]
     fn test_box_options_defaults() {
         let opts = BoxOptions::default();
-        assert!(opts.auto_remove, "auto_remove should default to true");
+        assert!(opts.removes_on_stop());
         assert!(!opts.detach, "detach should default to false");
     }
 
@@ -764,10 +755,8 @@ mod tests {
             "ports": []
         }"#;
         let opts: BoxOptions = serde_json::from_str(json).unwrap();
-        assert!(
-            opts.auto_remove,
-            "auto_remove should default to true via serde"
-        );
+        assert_eq!(opts.auto_delete, None);
+        assert!(opts.removes_on_stop());
         assert!(!opts.detach, "detach should default to false via serde");
     }
 
@@ -779,21 +768,18 @@ mod tests {
             "volumes": [],
             "network": {"Enabled": {"allow_net": []}},
             "ports": [],
-            "auto_remove": false,
+            "auto_delete": 0,
             "detach": true
         }"#;
         let opts: BoxOptions = serde_json::from_str(json).unwrap();
-        assert!(
-            !opts.auto_remove,
-            "explicit auto_remove=false should be respected"
-        );
+        assert_eq!(opts.auto_delete, Some(0));
         assert!(opts.detach, "explicit detach=true should be respected");
     }
 
     #[test]
     fn test_box_options_roundtrip() {
         let opts = BoxOptions {
-            auto_remove: false,
+            auto_delete: Some(0),
             detach: true,
             ..Default::default()
         };
@@ -801,7 +787,7 @@ mod tests {
         let json = serde_json::to_string(&opts).unwrap();
         let opts2: BoxOptions = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(opts.auto_remove, opts2.auto_remove);
+        assert_eq!(opts.auto_delete, opts2.auto_delete);
         assert_eq!(opts.detach, opts2.detach);
     }
 
@@ -859,50 +845,36 @@ mod tests {
     }
 
     #[test]
-    fn test_sanitize_auto_remove_detach_incompatible() {
-        // auto_remove=true + detach=true is invalid
+    fn test_sanitize_remove_on_stop_detach_incompatible() {
         let opts = BoxOptions {
-            auto_remove: true,
+            auto_delete: Some(1),
             detach: true,
             ..Default::default()
         };
-        let result = opts.sanitize();
-        assert!(
-            result.is_err(),
-            "auto_remove=true + detach=true should fail"
-        );
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("incompatible"),
-            "Error should mention incompatibility"
-        );
+        let err_msg = opts.sanitize().unwrap_err().to_string();
+        assert!(err_msg.contains("incompatible"));
     }
 
     #[test]
     fn test_sanitize_valid_combinations() {
-        // auto_remove=true, detach=false (default) - valid
-        let opts1 = BoxOptions {
-            auto_remove: true,
-            detach: false,
+        let remove = BoxOptions {
+            auto_delete: Some(1),
             ..Default::default()
         };
-        assert!(opts1.sanitize().is_ok());
+        assert!(remove.sanitize().is_ok());
 
-        // auto_remove=false, detach=true - valid
-        let opts2 = BoxOptions {
-            auto_remove: false,
+        let keep_detached = BoxOptions {
+            auto_delete: Some(0),
             detach: true,
             ..Default::default()
         };
-        assert!(opts2.sanitize().is_ok());
+        assert!(keep_detached.sanitize().is_ok());
 
-        // auto_remove=false, detach=false - valid
-        let opts3 = BoxOptions {
-            auto_remove: false,
-            detach: false,
+        let keep_attached = BoxOptions {
+            auto_delete: Some(0),
             ..Default::default()
         };
-        assert!(opts3.sanitize().is_ok());
+        assert!(keep_attached.sanitize().is_ok());
     }
 
     // ========================================================================

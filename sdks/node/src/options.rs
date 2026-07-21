@@ -193,7 +193,8 @@ pub struct JsBoxOptions {
     /// Port mappings as array of port specs
     pub ports: Option<Vec<JsPortSpec>>,
 
-    /// Automatically remove box when stopped (default: false)
+    /// Automatically remove box when stopped (default: false).
+    /// @deprecated Use autoDelete.
     pub auto_remove: Option<bool>,
 
     /// Idle time in seconds before AutoPause; 0 disables AutoPause.
@@ -356,6 +357,10 @@ impl TryFrom<JsBoxOptions> for BoxOptions {
     type Error = boxlite_shared::errors::BoxliteError;
 
     fn try_from(js_opts: JsBoxOptions) -> Result<Self, Self::Error> {
+        let auto_delete = js_opts
+            .auto_delete
+            .or_else(|| js_opts.auto_remove.map(u32::from))
+            .or(Some(0)); // Preserve Node's historical keep-on-stop default.
         // Convert volumes
         let volumes = js_opts
             .volumes
@@ -433,9 +438,8 @@ impl TryFrom<JsBoxOptions> for BoxOptions {
                 health_check,
                 ..Default::default()
             },
-            auto_remove: js_opts.auto_remove.unwrap_or(false),
             auto_pause: js_opts.auto_pause,
-            auto_delete: js_opts.auto_delete,
+            auto_delete,
             auto_resume: js_opts.auto_resume,
             detach: js_opts.detach.unwrap_or(false),
             entrypoint: js_opts.entrypoint,
@@ -733,7 +737,13 @@ mod tests {
             secrets: None,
         };
 
+        let mut both = js.clone();
+        both.auto_remove = Some(false);
+        both.auto_delete = Some(60);
+        assert_eq!(BoxOptions::try_from(both).unwrap().auto_delete, Some(60));
+
         let opts = BoxOptions::try_from(js).unwrap();
+        assert_eq!(opts.auto_delete, Some(0));
         match opts.network {
             NetworkSpec::Enabled { allow_net } => {
                 assert_eq!(allow_net, vec!["example.com", "*.openai.com"]);

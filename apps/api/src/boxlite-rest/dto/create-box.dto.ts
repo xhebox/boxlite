@@ -94,10 +94,6 @@ export class CreateBoxDto {
 
   @IsOptional()
   @IsBoolean()
-  auto_remove?: boolean
-
-  @IsOptional()
-  @IsBoolean()
   detach?: boolean
 
   @IsOptional()

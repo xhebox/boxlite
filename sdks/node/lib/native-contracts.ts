@@ -87,6 +87,7 @@ export interface JsBoxOptions {
   volumes?: JsVolumeSpec[];
   network?: JsNetworkSpec;
   ports?: JsPortSpec[];
+  /** @deprecated Use autoDelete. */
   autoRemove?: boolean;
   detach?: boolean;
   autoPause?: number;

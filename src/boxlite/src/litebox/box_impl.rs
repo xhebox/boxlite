@@ -736,7 +736,8 @@ impl BoxImpl {
             .boxes_stopped
             .fetch_add(1, Ordering::Relaxed);
 
-        if self.config.options.auto_remove {
+        // Apply the configured remove-on-stop policy.
+        if self.config.options.removes_on_stop() {
             self.runtime.remove_box(self.id(), false)?;
         }
 
@@ -1468,7 +1469,7 @@ mod tests {
             options: BoxOptions {
                 rootfs: RootfsSpec::Image("alpine:latest".into()),
                 detach: false,
-                auto_remove: false,
+                auto_delete: Some(0),
                 ..Default::default()
             },
             engine_kind: VmmKind::Libkrun,

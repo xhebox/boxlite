@@ -333,7 +333,7 @@ paths:
       summary: Stop a box (terminate VM)
       description: |
         Gracefully stops the VM. The box transitions to `stopped` status.
-        If `auto_remove` was set on creation, the box is also deleted.
+        AutoDelete may later delete the stopped box according to its configured interval.
       tags: [Boxes]
       parameters:
         - $ref: "#/components/parameters/idempotencyKey"
@@ -1187,10 +1187,10 @@ components:
               type: string
               description: Default security preset
               example: standard
-            auto_remove:
-              type: boolean
-              description: Default auto-remove on stop
-              example: true
+            auto_delete:
+              type: integer
+              description: Default AutoDelete interval in seconds; 0 disables AutoDelete
+              example: 0
         overrides:
           type: object
           description: Server-enforced overrides that clients cannot change
@@ -1603,10 +1603,6 @@ components:
           description: |
             Secret placeholder rules for outbound HTTP(S) requests.
             Matching requests replace `placeholder` with `value` on the host side.
-        auto_remove:
-          type: boolean
-          description: Automatically remove box when stopped
-          default: true
         detach:
           type: boolean
           description: Box survives parent process exit

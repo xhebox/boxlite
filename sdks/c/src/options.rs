@@ -459,10 +459,8 @@ pub unsafe fn options_add_secret(
 }
 
 pub unsafe fn options_set_auto_remove(handle: *mut OptionsHandle, val: c_int) {
-    unsafe {
-        if !handle.is_null() {
-            (*handle).options.auto_remove = val != 0;
-        }
+    if let Some(handle) = unsafe { handle.as_mut() } {
+        handle.options.auto_delete = Some(u32::from(val != 0));
     }
 }
 

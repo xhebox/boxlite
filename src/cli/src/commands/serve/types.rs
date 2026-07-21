@@ -42,7 +42,7 @@ pub(super) struct CreateBoxRequest {
     #[serde(default)]
     pub network: Option<NetworkSpec>,
     #[serde(default)]
-    pub auto_remove: Option<bool>,
+    pub auto_delete: Option<u32>,
     #[serde(default)]
     pub detach: Option<bool>,
     // `security` / `security_settings` are intentionally absent from

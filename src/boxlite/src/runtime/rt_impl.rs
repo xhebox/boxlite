@@ -859,7 +859,7 @@ impl RuntimeImpl {
     /// Remove a box from the runtime (internal implementation).
     ///
     /// This is the internal implementation called by both `BoxliteRuntime::remove()`
-    /// and `LiteBox::stop()` (when `auto_remove=true`).
+    /// and `LiteBox::stop()` when its removal policy is enabled.
     ///
     /// Handles both persisted boxes (in database) and in-memory-only boxes
     /// (created but not yet started).
@@ -1174,7 +1174,7 @@ impl RuntimeImpl {
         let persisted = self.box_manager.all_boxes(true)?;
 
         // Phase 1: Clean up boxes that shouldn't persist
-        // - auto_remove=true boxes: these are ephemeral and shouldn't survive restarts
+        // - remove-on-stop boxes (auto_delete): ephemeral, shouldn't survive restarts
         // - Orphaned active boxes: was Running but directory is missing (crashed mid-operation)
         //
         // Note: We don't remove Configured or Stopped boxes without directories because:
@@ -1183,10 +1183,10 @@ impl RuntimeImpl {
         // - Only Running boxes must have a directory
         let mut boxes_to_remove = Vec::new();
         for (config, state) in &persisted {
-            let should_remove = if config.options.auto_remove {
+            let should_remove = if config.options.removes_on_stop() {
                 tracing::info!(
                     box_id = %config.id,
-                    "Removing auto_remove=true box during recovery"
+                    "Removing ephemeral (remove-on-stop) box during recovery"
                 );
                 true
             } else if state.status.is_active() && !config.box_home.exists() {
@@ -1238,7 +1238,7 @@ impl RuntimeImpl {
 
         if !boxes_to_remove.is_empty() {
             tracing::info!(
-                "Cleaned up {} boxes during recovery (auto_remove or orphaned)",
+                "Cleaned up {} boxes during recovery (remove-on-stop or orphaned)",
                 boxes_to_remove.len()
             );
         }
@@ -1612,10 +1612,11 @@ impl std::fmt::Debug for RuntimeImpl {
 pub(crate) struct LocalRuntime(pub(crate) SharedRuntimeImpl);
 
 fn reject_local_lifecycle_policy(options: &BoxOptions) -> BoxliteResult<()> {
-    if options.auto_pause.is_some() || options.auto_delete.is_some() {
+    // Local runtimes support auto_delete as a remove-on-stop policy, but AutoPause
+    // needs a sweeper that the local runtime does not have, so it stays REST-only.
+    if options.auto_pause.is_some() {
         return Err(BoxliteError::Unsupported(
-            "AutoPause and AutoDelete lifecycle policies are only supported by REST runtimes"
-                .into(),
+            "AutoPause is only supported by REST runtimes".into(),
         ));
     }
     Ok(())
@@ -1740,10 +1741,7 @@ mod tests {
 
         options.auto_pause = None;
         options.auto_delete = Some(3600);
-        assert!(matches!(
-            reject_local_lifecycle_policy(&options),
-            Err(BoxliteError::Unsupported(_))
-        ));
+        assert!(reject_local_lifecycle_policy(&options).is_ok());
     }
     /// Create a RuntimeImpl with isolated temp directory.
     fn create_test_runtime() -> (SharedRuntimeImpl, TempDir) {
@@ -1768,7 +1766,7 @@ mod tests {
             options: BoxOptions {
                 rootfs: RootfsSpec::Image("alpine:latest".into()),
                 detach,
-                auto_remove: false,
+                auto_delete: Some(0),
                 ..Default::default()
             },
             engine_kind: VmmKind::Libkrun,
@@ -1822,7 +1820,7 @@ mod tests {
             options: BoxOptions {
                 rootfs: RootfsSpec::Image("alpine:latest".into()),
                 detach,
-                auto_remove: false,
+                auto_delete: Some(0),
                 ..Default::default()
             },
             engine_kind: VmmKind::Libkrun,

@@ -754,7 +754,7 @@ fn build_box_options(req: &CreateBoxRequest) -> Result<BoxOptions, boxlite::Boxl
         cmd: req.cmd.clone(),
         user: req.user.clone(),
         tty: req.tty.unwrap_or(false),
-        auto_remove: req.auto_remove.unwrap_or(false),
+        auto_delete: Some(req.auto_delete.unwrap_or(0)),
         detach: req.detach.unwrap_or(true),
         ..Default::default()
     })

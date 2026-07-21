@@ -317,6 +317,7 @@ func WithAutoResumeEnabled(enabled bool) BoxOption {
 }
 
 // WithAutoRemove sets whether the box is auto-removed on stop.
+// Deprecated: use WithAutoDeleteInterval.
 func WithAutoRemove(v bool) BoxOption {
 	return func(c *boxConfig) { c.autoRemove = &v }
 }
@@ -489,14 +490,14 @@ func buildCOptions(image string, cfg *boxConfig) (*C.CBoxliteOptions, error) {
 	if cfg.autoPause != nil {
 		C.boxlite_options_set_auto_pause_interval(cOpts, C.uint32_t(*cfg.autoPause))
 	}
+	if cfg.autoRemove != nil {
+		C.boxlite_options_set_auto_remove(cOpts, boolToCInt(*cfg.autoRemove))
+	}
 	if cfg.autoDelete != nil {
 		C.boxlite_options_set_auto_delete_interval(cOpts, C.uint32_t(*cfg.autoDelete))
 	}
 	if cfg.autoResume != nil {
 		C.boxlite_options_set_auto_resume_enabled(cOpts, boolToCInt(*cfg.autoResume))
-	}
-	if cfg.autoRemove != nil {
-		C.boxlite_options_set_auto_remove(cOpts, boolToCInt(*cfg.autoRemove))
 	}
 	if cfg.detach != nil {
 		C.boxlite_options_set_detach(cOpts, boolToCInt(*cfg.detach))

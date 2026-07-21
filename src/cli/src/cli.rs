@@ -773,7 +773,9 @@ pub struct ManagementFlags {
 impl ManagementFlags {
     pub fn apply_to(&self, opts: &mut BoxOptions) -> anyhow::Result<()> {
         opts.detach = self.detach;
-        opts.auto_remove = self.rm;
+        // `--rm` is the CLI spelling of "delete when stopped"; the CLI
+        // default (like `docker run`) is to keep the box.
+        opts.auto_delete = Some(if self.rm { 1 } else { 0 });
         if let Some(ref preset) = self.security {
             // Bubble the typo'd-preset error all the way back to the
             // CLI exit so the operator sees the offending value.

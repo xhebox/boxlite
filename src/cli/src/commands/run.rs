@@ -129,9 +129,10 @@ impl BoxRunner {
         self.args.network.apply_to(&mut options)?;
         self.args.process.apply_to(&mut options)?;
 
-        // Runtime requires detached boxes to have manual lifecycle control (auto_remove=false)
+        // Detached boxes keep manual lifecycle control: detach silently
+        // overrides --rm (historical CLI behavior).
         if self.args.management.detach {
-            options.auto_remove = false;
+            options.auto_delete = Some(0);
         }
 
         // Docker semantics: the user COMMAND replaces the image CMD (the image

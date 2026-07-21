@@ -383,6 +383,7 @@ pub(crate) struct PyBoxOptions {
     #[pyo3(get, set)]
     pub(crate) network: Option<PyNetworkSpec>,
     pub(crate) ports: Vec<PyPortSpec>,
+    /// Deprecated compatibility option; use auto_delete.
     #[pyo3(get, set)]
     pub(crate) auto_remove: Option<bool>,
     #[pyo3(get, set)]
@@ -504,6 +505,9 @@ impl TryFrom<PyBoxOptions> for BoxOptions {
     type Error = boxlite::BoxliteError;
 
     fn try_from(py_opts: PyBoxOptions) -> Result<Self, Self::Error> {
+        let auto_delete = py_opts
+            .auto_delete
+            .or_else(|| py_opts.auto_remove.map(u32::from));
         let volumes = py_opts.volumes.into_iter().map(VolumeSpec::from).collect();
 
         let network = match py_opts.network {
@@ -536,7 +540,7 @@ impl TryFrom<PyBoxOptions> for BoxOptions {
             network,
             ports,
             auto_pause: py_opts.auto_pause,
-            auto_delete: py_opts.auto_delete,
+            auto_delete,
             auto_resume: py_opts.auto_resume,
             entrypoint: py_opts.entrypoint,
             cmd: py_opts.cmd,
@@ -544,11 +548,7 @@ impl TryFrom<PyBoxOptions> for BoxOptions {
             ..Default::default()
         };
 
-        // These fields have non-None defaults (auto_remove=true, detach=false),
-        // so None means "keep default" rather than "set to None".
-        if let Some(auto_remove) = py_opts.auto_remove {
-            opts.auto_remove = auto_remove;
-        }
+        // detach has a non-None core default, so None means "keep default".
 
         if let Some(detach) = py_opts.detach {
             opts.detach = detach;
