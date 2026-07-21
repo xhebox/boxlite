@@ -171,25 +171,25 @@ type Secret struct {
 }
 
 type boxConfig struct {
-	name               string
-	cpus               int
-	memoryMiB          int
-	diskSizeGB         int
-	rootfsPath         string
-	env                [][2]string
-	volumes            []volumeEntry
-	ports              []PortSpec
-	workDir            string
-	entrypoint         []string
-	cmd                []string
-	autoRemove         *bool
+	name       string
+	cpus       int
+	memoryMiB  int
+	diskSizeGB int
+	rootfsPath string
+	env        [][2]string
+	volumes    []volumeEntry
+	ports      []PortSpec
+	workDir    string
+	entrypoint []string
+	cmd        []string
+	autoRemove *bool
 	autoPause  *uint32
 	autoDelete *uint32
-	autoResume  *bool
-	detach             *bool
-	network            *NetworkSpec
-	secrets            []Secret
-	advanced           *AdvancedBoxOptions // nil = runtime defaults; non-nil = caller-owned advanced opts applied via boxlite_options_set_advanced
+	autoResume *bool
+	detach     *bool
+	network    *NetworkSpec
+	secrets    []Secret
+	advanced   *AdvancedBoxOptions // nil = runtime defaults; non-nil = caller-owned advanced opts applied via boxlite_options_set_advanced
 }
 
 type volumeEntry struct {
