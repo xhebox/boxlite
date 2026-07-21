@@ -38,10 +38,12 @@ class FakeBoxUsagePeriodRepository {
   rows: BoxUsagePeriod[] = []
   archivedRows: BoxUsagePeriodArchive[] = []
   transactionOperations: string[] = []
+  lastArchiveSql = ''
+  lastArchiveBatchSize = 0
   failNextSave: Error | null = null
   manager = {
-    transaction: jest.fn(async (fn: (manager: FakeTransactionManager) => Promise<void>) => {
-      await fn(new FakeTransactionManager(this))
+    transaction: jest.fn(async (fn: (manager: FakeTransactionManager) => Promise<unknown>) => {
+      return fn(new FakeTransactionManager(this))
     }),
   }
 
@@ -118,6 +120,33 @@ class FakeBoxUsagePeriodRepository {
 
 class FakeTransactionManager {
   constructor(private readonly periods: FakeBoxUsagePeriodRepository) {}
+
+  getRepository(entity: typeof BoxUsagePeriod | typeof BoxUsagePeriodArchive) {
+    return {
+      metadata: {
+        tablePath: entity === BoxUsagePeriod ? 'box_usage_period' : 'box_usage_period_archive',
+      },
+    }
+  }
+
+  async query(sql: string, parameters: unknown[]): Promise<Array<Record<string, number>>> {
+    this.periods.transactionOperations.push('query')
+    this.periods.lastArchiveSql = sql
+    this.periods.lastArchiveBatchSize = Number(parameters[0])
+
+    const candidates = this.periods.rows
+      .filter((row) => row.endAt !== null)
+      .sort((left, right) => left.startAt.getTime() - right.startAt.getTime() || left.id.localeCompare(right.id))
+      .slice(0, this.periods.lastArchiveBatchSize)
+    const inserted = candidates.filter((period) => {
+      if (this.periods.archivedRows.some((archive) => archive.id === period.id)) return false
+      this.periods.archivedRows.push(BoxUsagePeriodArchive.fromBoxUsagePeriod(period))
+      return true
+    })
+    await this.periods.delete(inserted.map((period) => period.id))
+
+    return [{ claimed: candidates.length, archived: inserted.length, deleted: inserted.length }]
+  }
 
   async find(
     _entity: typeof BoxUsagePeriod,
@@ -261,14 +290,60 @@ describe('UsageService', () => {
     }
   })
 
-  it('does not roll over unassigned warm-pool periods', async () => {
+  it('does not create usage periods for unassigned warm-pool boxes', async () => {
+    const warmPoolBox = {
+      ...makeBox(BoxState.STARTED),
+      organizationId: BOX_WARM_POOL_UNASSIGNED_ORGANIZATION,
+    } as Box
+
+    await service.handleBoxStateUpdate({ box: warmPoolBox, newState: BoxState.STARTED } as never)
+
+    expect(periods.rows).toHaveLength(0)
+  })
+
+  it('starts metering when an unassigned warm-pool box is assigned to an organization', async () => {
+    const warmPoolBox = {
+      ...makeBox(BoxState.STARTED),
+      organizationId: BOX_WARM_POOL_UNASSIGNED_ORGANIZATION,
+    } as Box
+    await service.handleBoxStateUpdate({ box: warmPoolBox, newState: BoxState.STARTED } as never)
+
+    const assignedBox = { ...warmPoolBox, organizationId: 'org-1' } as Box
+    await service.handleBoxStateUpdate({ box: assignedBox, newState: BoxState.STARTED } as never)
+
+    expect(periods.rows).toHaveLength(1)
+    expect(periods.rows[0]).toMatchObject({
+      boxId: assignedBox.id,
+      organizationId: 'org-1',
+      cpu: assignedBox.cpu,
+      mem: assignedBox.mem,
+      disk: assignedBox.disk,
+      gpu: assignedBox.gpu,
+      endAt: null,
+    })
+  })
+
+  it('does not roll over legacy unassigned warm-pool periods', async () => {
     const warmPoolBox = {
       ...makeBox(BoxState.STARTED),
       organizationId: BOX_WARM_POOL_UNASSIGNED_ORGANIZATION,
     } as Box
     boxes.boxes.set(warmPoolBox.id, warmPoolBox)
-    await service.handleBoxStateUpdate({ box: warmPoolBox, newState: BoxState.STARTED } as never)
-    periods.rows[0].startAt = new Date('2026-07-06T00:00:00Z')
+    await periods.save({
+      ...new BoxUsagePeriod(),
+      id: 'legacy-warm-pool-period',
+      boxId: warmPoolBox.id,
+      organizationId: BOX_WARM_POOL_UNASSIGNED_ORGANIZATION,
+      startAt: new Date('2026-07-06T00:00:00Z'),
+      endAt: null,
+      cpu: warmPoolBox.cpu,
+      mem: warmPoolBox.mem,
+      disk: warmPoolBox.disk,
+      gpu: warmPoolBox.gpu,
+      region: warmPoolBox.region,
+      boxClass: warmPoolBox.class,
+      regionType: RegionType.SHARED,
+    })
 
     await service.closeAndReopenBoxUsagePeriods()
 
@@ -290,11 +365,12 @@ describe('UsageService', () => {
     expect(periods.rows).toHaveLength(0)
     expect(periods.archivedRows).toHaveLength(1)
     expect(periods.archivedRows[0]).toMatchObject({
+      id: 'period-1',
       boxId: 'box-1',
       organizationId: 'org-1',
       endAt: closedAt,
     })
-    expect(locks.locks).toContain('archive-usage-periods')
+    expect(locks.locks).not.toContain('archive-usage-periods')
   })
 
   it('propagates usage ledger failures from lifecycle event handlers and releases the Box lock', async () => {
@@ -320,7 +396,35 @@ describe('UsageService', () => {
     expect(periods.manager.transaction).toHaveBeenCalledTimes(1)
     expect(periods.rows).toHaveLength(0)
     expect(periods.archivedRows).toHaveLength(1)
-    expect(periods.transactionOperations).toEqual(['delete', 'save'])
+    expect(periods.transactionOperations).toEqual(['query'])
+    expect(periods.lastArchiveBatchSize).toBe(1000)
+    expect(periods.lastArchiveSql).toContain('FOR UPDATE OF p SKIP LOCKED')
+    expect(periods.lastArchiveSql).toContain('ON CONFLICT (id) DO NOTHING')
+    expect(periods.lastArchiveSql).toContain('USING inserted i')
+  })
+
+  it('keeps a closed source period when its archive identity already exists', async () => {
+    const source = periods.create({
+      id: 'period-conflict',
+      boxId: 'box-1',
+      organizationId: 'org-1',
+      startAt: new Date('2026-07-08T00:00:00Z'),
+      endAt: new Date('2026-07-08T00:01:00Z'),
+      cpu: 1,
+      gpu: 0,
+      mem: 1,
+      disk: 10,
+      region: 'us',
+      boxClass: BoxClass.SMALL,
+      regionType: RegionType.SHARED,
+    })
+    await periods.save(source)
+    periods.archivedRows.push(BoxUsagePeriodArchive.fromBoxUsagePeriod(source))
+
+    await service.archiveBoxUsagePeriods()
+
+    expect(periods.rows).toEqual([source])
+    expect(periods.archivedRows).toHaveLength(1)
   })
 
   it('tracks active usage jobs for graceful shutdown', () => {
@@ -337,5 +441,24 @@ describe('usage period persistence', () => {
 
     const columns = getMetadataArgsStorage().columns.filter((column) => column.target === BoxUsagePeriod)
     expect(columns.map((column) => column.propertyName)).toEqual(expect.arrayContaining(['boxClass', 'regionType']))
+  })
+
+  it('preserves the active period identity when creating an archive value', () => {
+    const period = Object.assign(new BoxUsagePeriod(), {
+      id: 'source-period-id',
+      boxId: 'box-1',
+      organizationId: 'org-1',
+      startAt: new Date('2026-07-08T00:00:00Z'),
+      endAt: new Date('2026-07-08T00:01:00Z'),
+      cpu: 1,
+      gpu: 0,
+      mem: 1,
+      disk: 10,
+      region: 'us',
+      boxClass: BoxClass.SMALL,
+      regionType: RegionType.SHARED,
+    })
+
+    expect(BoxUsagePeriodArchive.fromBoxUsagePeriod(period).id).toBe(period.id)
   })
 })

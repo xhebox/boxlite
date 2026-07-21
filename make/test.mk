@@ -339,9 +339,37 @@ test\:all\:go:
 # Without the tag, `go test` uses bridge_cgo_prebuilt.go, which needs the
 # downloaded sdks/go/{libboxlite.a,include} bundle (absent on dev checkouts)
 # and fails #579. Same pattern as test:unit:go above.
+BILLING_ARCHIVE_LINT_FILES = \
+	api/src/billing/billing-edge-cases.integration.spec.ts \
+	api/src/usage/entities/box-usage-period-archive.entity.ts \
+	api/src/usage/services/usage.service.ts \
+	api/src/usage/usage.service.spec.ts \
+	infra/sst-billing-config.test.mjs \
+	infra/sst.config.ts \
+	scripts/local-dex-env.mjs
+BILLING_ARCHIVE_FORMAT_FILES = \
+	api/src/billing/billing-edge-cases.integration.spec.ts \
+	api/src/usage/entities/box-usage-period-archive.entity.ts \
+	api/src/usage/services/usage.service.ts \
+	api/src/usage/usage.service.spec.ts \
+	infra/BILLING_USAGE_ARCHIVE_RUNBOOK.md \
+	infra/sst-billing-config.test.mjs \
+	scripts/local-dex-env.mjs
+
 test\:apps: _ensure-apps-deps dev\:go
 	@echo "🧪 Running apps workspace test matrix..."
 	@cd apps && GOFLAGS=-tags=boxlite_dev yarn nx run-many --target=test --all --parallel=$$(getconf _NPROCESSORS_ONLN) $(if $(FILTER),-- --testNamePattern '$(FILTER)',)
+
+test\:apps\:billing-archive: _ensure-apps-deps
+	@cd apps && yarn jest --config api/jest.config.ts --runInBand \
+		api/src/usage/usage.service.spec.ts
+	@cd apps && yarn node --test infra/sst-billing-config.test.mjs
+	@cd apps && yarn prettier --check $(BILLING_ARCHIVE_FORMAT_FILES)
+	@cd apps && yarn eslint --rule '@nx/enforce-module-boundaries: off' $(BILLING_ARCHIVE_LINT_FILES)
+
+test\:apps\:billing-archive-db: _ensure-apps-deps
+	@cd apps && BILLING_EDGE_DB_TESTS=1 yarn jest --config api/jest.config.ts --runInBand \
+		api/src/billing/billing-edge-cases.integration.spec.ts
 
 test\:rest\:inventory: _ensure-apps-deps
 	@cd apps && yarn node ../scripts/test/rest/inventory.mjs

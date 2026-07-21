@@ -6,8 +6,10 @@
 import 'reflect-metadata'
 import Decimal from 'decimal.js'
 import { randomUUID } from 'node:crypto'
-import { DataSource } from 'typeorm'
+import { DataSource, IsNull, Not } from 'typeorm'
+import { BoxUsagePeriod } from '../usage/entities/box-usage-period.entity'
 import { BoxUsagePeriodArchive } from '../usage/entities/box-usage-period-archive.entity'
+import { UsageService } from '../usage/services/usage.service'
 import { PaymentProviderEvent } from './entities/payment-provider-event.entity'
 import { BillingOpsService } from './billing-ops.service'
 import { PricingPlan } from './entities/pricing-plan.entity'
@@ -37,6 +39,7 @@ const migratedTables = [
   'wallet_transaction',
   'rated_period',
   'pricing_plan',
+  'box_usage_period',
   'box_usage_period_archive',
   'top_up_record',
   'payment_provider_event',
@@ -124,11 +127,13 @@ describeWithDatabase('Billing common edge cases with PostgreSQL', () => {
         WalletTransaction,
         RatedPeriod,
         PricingPlan,
+        BoxUsagePeriod,
         BoxUsagePeriodArchive,
         TopUpRecord,
         PaymentProviderEvent,
       ],
       synchronize: false,
+      extra: { max: 25 },
     }).initialize()
   }, 30_000)
 
@@ -138,6 +143,7 @@ describeWithDatabase('Billing common edge cases with PostgreSQL', () => {
     await billingDataSource.getRepository(TopUpRecord).clear()
     await billingDataSource.getRepository(RatedPeriod).clear()
     await billingDataSource.getRepository(BoxUsagePeriodArchive).clear()
+    await billingDataSource.getRepository(BoxUsagePeriod).clear()
     await billingDataSource.getRepository(PricingPlan).clear()
     await billingDataSource.getRepository(Wallet).clear()
   })
@@ -176,6 +182,49 @@ describeWithDatabase('Billing common edge cases with PostgreSQL', () => {
       provider,
       { getOrThrow: () => 'http://localhost:3000' } as never,
     )
+  }
+
+  function usageService(): UsageService {
+    const unexpectedRedisLock = () => {
+      throw new Error('usage period archiving must not use Redis locking')
+    }
+    return new UsageService(
+      billingDataSource.getRepository(BoxUsagePeriod),
+      { lock: unexpectedRedisLock, unlock: unexpectedRedisLock } as never,
+      {} as never,
+      {} as never,
+    )
+  }
+
+  async function createUsagePeriods(
+    count: number,
+    options: {
+      organizationId?: string
+      startAt?: Date
+      endAt?: Date | null
+    } = {},
+  ): Promise<string[]> {
+    const fixtureId = randomUUID()
+    const organizationId = options.organizationId ?? randomUUID()
+    const startAt = options.startAt ?? new Date('1900-01-01T00:00:00.000Z')
+    const endAt = options.endAt === undefined ? new Date('1900-01-01T00:01:00.000Z') : options.endAt
+    const rows = await billingDataSource.query<Array<{ id: string }>>(
+      `INSERT INTO "${schemaName}"."box_usage_period" (
+        id, "boxId", "organizationId", "startAt", "endAt",
+        cpu, gpu, mem, disk, region, "boxClass", "regionType"
+      )
+      SELECT
+        md5($1 || ':' || series.value::text)::uuid,
+        $2 || series.value::text,
+        $3,
+        $4::timestamptz,
+        $5::timestamptz,
+        1, 0, 0, 0, 'us', 'small', 'shared'
+      FROM generate_series(1, $6::int) AS series(value)
+      RETURNING id`,
+      [fixtureId, `edge-box-${fixtureId}-`, organizationId, startAt.toISOString(), endAt?.toISOString() ?? null, count],
+    )
+    return rows.map((row) => row.id)
   }
 
   async function createWallet(organizationId: string, overrides: Partial<Wallet> = {}): Promise<Wallet> {
@@ -217,6 +266,184 @@ describeWithDatabase('Billing common edge cases with PostgreSQL', () => {
       }),
     )
   }
+
+  describe('usage period archival', () => {
+    it('lets two API instances archive the same pending batch with source ids preserved', async () => {
+      const sourceIds = await createUsagePeriods(1500)
+      const first = usageService()
+      const second = usageService()
+
+      await Promise.all([first.archiveBoxUsagePeriods(), second.archiveBoxUsagePeriods()])
+
+      await expect(billingDataSource.getRepository(BoxUsagePeriod).countBy({ endAt: Not(IsNull()) })).resolves.toBe(0)
+      const archiveIds = (await billingDataSource.getRepository(BoxUsagePeriodArchive).find()).map((row) => row.id)
+      expect(archiveIds).toHaveLength(sourceIds.length)
+      expect(archiveIds.sort()).toEqual(sourceIds.sort())
+    }, 30_000)
+
+    it('moves 10000 closed periods once across 20 concurrent workers and retains open periods', async () => {
+      const closedIds = await createUsagePeriods(10_000)
+      const openIds = await createUsagePeriods(7, { endAt: null })
+      const services = Array.from({ length: 20 }, () => usageService())
+      const activeRepository = billingDataSource.getRepository(BoxUsagePeriod)
+
+      for (let sweep = 0; sweep < 3; sweep++) {
+        await Promise.all(services.map((service) => service.archiveBoxUsagePeriods()))
+        if ((await activeRepository.countBy({ endAt: Not(IsNull()) })) === 0) break
+      }
+
+      await expect(activeRepository.countBy({ endAt: Not(IsNull()) })).resolves.toBe(0)
+      const retainedOpenIds = (await activeRepository.findBy({ endAt: IsNull() })).map((row) => row.id)
+      expect(retainedOpenIds.sort()).toEqual(openIds.sort())
+      const archiveIds = (await billingDataSource.getRepository(BoxUsagePeriodArchive).find()).map((row) => row.id)
+      expect(archiveIds).toHaveLength(closedIds.length)
+      expect(archiveIds.sort()).toEqual(closedIds.sort())
+    }, 120_000)
+
+    it('skips an externally locked period and archives it after the lock is released', async () => {
+      const sourceIds = await createUsagePeriods(3)
+      const lockedId = sourceIds[0]
+      const unlockedIds = sourceIds.slice(1)
+      const service = usageService()
+      const locker = billingDataSource.createQueryRunner()
+      await locker.connect()
+      await locker.startTransaction()
+
+      try {
+        await locker.query(`SELECT id FROM "${schemaName}"."box_usage_period" WHERE id = $1 FOR UPDATE`, [lockedId])
+
+        await service.archiveBoxUsagePeriods()
+
+        await expect(
+          billingDataSource.getRepository(BoxUsagePeriod).findOneBy({ id: lockedId }),
+        ).resolves.not.toBeNull()
+        await expect(
+          billingDataSource.getRepository(BoxUsagePeriodArchive).findOneBy({ id: lockedId }),
+        ).resolves.toBeNull()
+        const firstArchiveIds = (await billingDataSource.getRepository(BoxUsagePeriodArchive).find()).map(
+          (row) => row.id,
+        )
+        expect(firstArchiveIds.sort()).toEqual(unlockedIds.sort())
+
+        await locker.commitTransaction()
+      } finally {
+        if (locker.isTransactionActive) await locker.rollbackTransaction()
+        await locker.release()
+      }
+
+      await service.archiveBoxUsagePeriods()
+      await expect(billingDataSource.getRepository(BoxUsagePeriod).count()).resolves.toBe(0)
+      const finalArchiveIds = (await billingDataSource.getRepository(BoxUsagePeriodArchive).find()).map((row) => row.id)
+      expect(finalArchiveIds.sort()).toEqual(sourceIds.sort())
+    }, 30_000)
+
+    it('rolls back the active-period delete when the archive insert fails', async () => {
+      const [sourceId] = await createUsagePeriods(1)
+      await controlDataSource.query(`
+        CREATE FUNCTION "${schemaName}".fail_usage_archive_insert() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'archive insert unavailable';
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_usage_archive_insert
+        BEFORE INSERT ON "${schemaName}"."box_usage_period_archive"
+        FOR EACH ROW EXECUTE FUNCTION "${schemaName}".fail_usage_archive_insert();
+      `)
+
+      try {
+        await expect(usageService().archiveBoxUsagePeriods()).rejects.toThrow('archive insert unavailable')
+      } finally {
+        await controlDataSource.query(`
+          DROP TRIGGER IF EXISTS fail_usage_archive_insert ON "${schemaName}"."box_usage_period_archive";
+          DROP FUNCTION IF EXISTS "${schemaName}".fail_usage_archive_insert();
+        `)
+      }
+
+      await expect(billingDataSource.getRepository(BoxUsagePeriod).findOneBy({ id: sourceId })).resolves.not.toBeNull()
+      await expect(billingDataSource.getRepository(BoxUsagePeriodArchive).count()).resolves.toBe(0)
+    }, 30_000)
+
+    it('keeps one archive when commit succeeds but the caller loses the response and retries', async () => {
+      const [sourceId] = await createUsagePeriods(1)
+      const service = usageService()
+
+      await expect(
+        (async () => {
+          await service.archiveBoxUsagePeriods()
+          throw new Error('archive commit response was lost')
+        })(),
+      ).rejects.toThrow('archive commit response was lost')
+      await service.archiveBoxUsagePeriods()
+
+      await expect(billingDataSource.getRepository(BoxUsagePeriod).count()).resolves.toBe(0)
+      await expect(billingDataSource.getRepository(BoxUsagePeriodArchive).find()).resolves.toEqual([
+        expect.objectContaining({ id: sourceId }),
+      ])
+    }, 30_000)
+
+    it('archives, rates, and debits every source period once when workers overlap', async () => {
+      const organizationId = randomUUID()
+      const periodCount = 25
+      const sourceIds = await createUsagePeriods(periodCount, {
+        organizationId,
+        startAt: new Date('1900-03-01T00:00:00.000Z'),
+        endAt: new Date('1900-03-01T00:01:00.000Z'),
+      })
+      await createWallet(organizationId, { paidBalanceCents: '100000' })
+      const archiveRepository = billingDataSource.getRepository(BoxUsagePeriodArchive)
+      const ratedRepository = billingDataSource.getRepository(RatedPeriod)
+      const planRepository = billingDataSource.getRepository(PricingPlan)
+      await planRepository.save(
+        planRepository.create({
+          version: 3,
+          cpuRateCentsPerSec: '1',
+          memRateCentsPerSec: '0',
+          diskRateCentsPerSec: '0',
+          gpuRateCentsPerSec: '0',
+          effectiveFrom: new Date('1900-01-01T00:00:00.000Z'),
+          effectiveTo: new Date('1901-01-01T00:00:00.000Z'),
+        }),
+      )
+      const firstSettlement = new SettlementService(
+        new RatingService(archiveRepository, ratedRepository, planRepository),
+        walletService(),
+      )
+      const secondSettlement = new SettlementService(
+        new RatingService(archiveRepository, ratedRepository, planRepository),
+        walletService(),
+      )
+      const archiver = usageService()
+
+      await Promise.all([
+        archiver.archiveBoxUsagePeriods(),
+        firstSettlement.settleClosedPeriods(),
+        secondSettlement.settleClosedPeriods(),
+      ])
+      for (let sweep = 0; sweep < 5; sweep++) {
+        await archiver.archiveBoxUsagePeriods()
+        await Promise.all([firstSettlement.settleClosedPeriods(), secondSettlement.settleClosedPeriods()])
+        const ratedCount = await ratedRepository.countBy({ organizationId })
+        const transactionCount = await billingDataSource
+          .getRepository(WalletTransaction)
+          .countBy({ organizationId, kind: 'usage_debit' })
+        if (ratedCount === periodCount && transactionCount === periodCount) break
+      }
+
+      const archives = await archiveRepository.findBy({ organizationId })
+      const ratedPeriods = await ratedRepository.findBy({ organizationId })
+      const transactions = await billingDataSource
+        .getRepository(WalletTransaction)
+        .findBy({ organizationId, kind: 'usage_debit' })
+      expect(archives.map((row) => row.id).sort()).toEqual(sourceIds.sort())
+      expect(ratedPeriods).toHaveLength(periodCount)
+      expect(ratedPeriods.map((row) => row.usagePeriodArchiveId).sort()).toEqual(sourceIds.sort())
+      expect(transactions).toHaveLength(periodCount)
+      expect(transactions.map((row) => row.ratedPeriodId).sort()).toEqual(ratedPeriods.map((row) => row.id).sort())
+      const wallet = await billingDataSource.getRepository(Wallet).findOneByOrFail({ organizationId })
+      expect(wallet.paidBalanceCents).toBe('98500')
+      expect(new Decimal(wallet.settlementRemainderCents).isZero()).toBe(true)
+    }, 60_000)
+  })
 
   it('creates exactly one immutable rating when two workers rate the same archived period', async () => {
     const archiveRepository = billingDataSource.getRepository(BoxUsagePeriodArchive)

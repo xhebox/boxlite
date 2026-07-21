@@ -51,6 +51,7 @@ export class BoxUsagePeriodArchive {
 
   public static fromBoxUsagePeriod(usagePeriod: BoxUsagePeriod) {
     const usagePeriodEntity = new BoxUsagePeriodArchive()
+    usagePeriodEntity.id = usagePeriod.id
     usagePeriodEntity.boxId = usagePeriod.boxId
     usagePeriodEntity.organizationId = usagePeriod.organizationId
     usagePeriodEntity.startAt = usagePeriod.startAt

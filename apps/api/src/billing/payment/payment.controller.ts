@@ -18,9 +18,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common'
-import { ApiBearerAuth, ApiOAuth2, ApiTags } from '@nestjs/swagger'
+import { ApiBearerAuth, ApiHeader, ApiOAuth2, ApiTags } from '@nestjs/swagger'
 import type { Request } from 'express'
-import { randomUUID } from 'node:crypto'
 import { CombinedAuthGuard } from '../../auth/combined-auth.guard'
 import { AuthenticatedRateLimitGuard } from '../../common/guards/authenticated-rate-limit.guard'
 import { RequiredOrganizationMemberRole } from '../../organization/decorators/required-organization-member-role.decorator'
@@ -60,13 +59,19 @@ export class BillingPaymentController {
   }
 
   @Post('top-ups')
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Stable client-generated key reused when retrying the same top-up request',
+  })
   @RequiredOrganizationMemberRole(OrganizationMemberRole.OWNER)
   createTopUp(
     @Param('organizationId') organizationId: string,
     @Body() input: TopUpRequest,
-    @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('idempotency-key') idempotencyKey: string,
   ) {
-    return this.paymentService.createManualTopUp(organizationId, input.amountCents, idempotencyKey ?? randomUUID())
+    if (!idempotencyKey) throw new BadRequestException('Idempotency-Key header is required')
+    return this.paymentService.createManualTopUp(organizationId, input.amountCents, idempotencyKey)
   }
 
   @Get('receipts')

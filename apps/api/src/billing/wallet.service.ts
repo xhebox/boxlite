@@ -9,6 +9,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter'
 import Decimal from 'decimal.js'
 import { EntityManager, QueryFailedError, Repository } from 'typeorm'
 import { TypedConfigService } from '../config/typed-config.service'
+import { BOX_WARM_POOL_UNASSIGNED_ORGANIZATION } from '../box/constants/box.constants'
 import { Organization } from '../organization/entities/organization.entity'
 import { RatedPeriod } from './entities/rated-period.entity'
 import { WalletTransaction } from './entities/wallet-transaction.entity'
@@ -130,6 +131,9 @@ export class WalletService {
       .createQueryBuilder('rp')
       .leftJoin(WalletTransaction, 'wt', 'wt."ratedPeriodId" = rp.id')
       .where('wt.id IS NULL')
+      .andWhere('rp."organizationId" <> :warmPoolOrganizationId', {
+        warmPoolOrganizationId: BOX_WARM_POOL_UNASSIGNED_ORGANIZATION,
+      })
       .orderBy('rp.ratedAt', 'ASC')
       .take(Math.max(1, Math.min(1000, Math.trunc(limit))))
       .getMany()

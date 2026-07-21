@@ -52,6 +52,15 @@ describe('BillingPaymentController', () => {
     }
   })
 
+  it('requires an Idempotency-Key header for top-ups', () => {
+    const controller = new BillingPaymentController(paymentService as never)
+
+    expect(() => controller.createTopUp('org-1', { amountCents: '2500' }, undefined as never)).toThrow(
+      new BadRequestException('Idempotency-Key header is required'),
+    )
+    expect(paymentService.createManualTopUp).not.toHaveBeenCalled()
+  })
+
   it('requires untouched raw bytes and a Stripe signature on the public webhook', async () => {
     const controller = new PaymentWebhookController(paymentService as never)
     const rawBody = Buffer.from('{"id":"evt-1"}')

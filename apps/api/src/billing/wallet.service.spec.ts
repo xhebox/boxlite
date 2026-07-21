@@ -4,6 +4,7 @@
  */
 
 import { Organization } from '../organization/entities/organization.entity'
+import { BOX_WARM_POOL_UNASSIGNED_ORGANIZATION } from '../box/constants/box.constants'
 import { RatedPeriod } from './entities/rated-period.entity'
 import { WalletTransaction } from './entities/wallet-transaction.entity'
 import { Wallet } from './entities/wallet.entity'
@@ -104,12 +105,17 @@ class FakeRatedPeriodRepository implements RepositoryWithRows {
   rows: RatedPeriod[] = []
 
   createQueryBuilder() {
+    let excludedOrganizationId: string | undefined
     const builder = {
       leftJoin: () => builder,
       where: () => builder,
+      andWhere: (_condition: string, parameters: { warmPoolOrganizationId?: string }) => {
+        excludedOrganizationId = parameters.warmPoolOrganizationId
+        return builder
+      },
       orderBy: () => builder,
       take: () => builder,
-      getMany: async () => this.rows,
+      getMany: async () => this.rows.filter((row) => row.organizationId !== excludedOrganizationId),
     }
     return builder
   }
@@ -300,5 +306,18 @@ describe('WalletService', () => {
     expect(await service.debitRatedPeriods()).toEqual({ debited: 2, skipped: 0 })
     expect(await service.debitRatedPeriods()).toEqual({ debited: 0, skipped: 2 })
     expect(transactions.rows.filter((row) => row.kind === 'usage_debit')).toHaveLength(2)
+  })
+
+  it('excludes unassigned warm-pool usage from wallet settlement', async () => {
+    const { service, ratedPeriods, transactions } = createService()
+    ratedPeriods.rows.push(
+      ratedPeriod({ id: 'warm-pool-rated', organizationId: BOX_WARM_POOL_UNASSIGNED_ORGANIZATION }),
+      ratedPeriod({ id: 'organization-rated' }),
+    )
+
+    await expect(service.debitRatedPeriods()).resolves.toEqual({ debited: 1, skipped: 0 })
+    expect(transactions.rows.filter((row) => row.kind === 'usage_debit')).toEqual([
+      expect.objectContaining({ ratedPeriodId: 'organization-rated' }),
+    ])
   })
 })

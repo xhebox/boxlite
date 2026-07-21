@@ -26,6 +26,21 @@ import { BoxDesiredState } from '../../box/enums/box-desired-state.enum'
 import { Region } from '../../region/entities/region.entity'
 import { RegionType } from '../../region/enums/region-type.enum'
 
+const ARCHIVE_BATCH_SIZE = 1000
+
+interface ArchiveBatchResult {
+  claimed: number | string
+  archived: number | string
+  deleted: number | string
+}
+
+function quoteTablePath(tablePath: string): string {
+  return tablePath
+    .split('.')
+    .map((part) => `"${part.replaceAll('"', '""')}"`)
+    .join('.')
+}
+
 @Injectable()
 export class UsageService implements TrackableJobExecutions, OnApplicationShutdown {
   activeJobs = new Set<string>()
@@ -114,6 +129,10 @@ export class UsageService implements TrackableJobExecutions, OnApplicationShutdo
   }
 
   private async createBoxUsagePeriod(event: BoxStateUpdatedEvent, diskOnly = false) {
+    if (event.box.organizationId === BOX_WARM_POOL_UNASSIGNED_ORGANIZATION) {
+      return
+    }
+
     const usagePeriod = new BoxUsagePeriod()
     usagePeriod.boxId = event.box.id
     usagePeriod.startAt = new Date()
@@ -214,41 +233,63 @@ export class UsageService implements TrackableJobExecutions, OnApplicationShutdo
     await this.redisLockProvider.unlock('close-and-reopen-usage-periods')
   }
 
-  @Cron(CronExpression.EVERY_5_SECONDS, { name: 'archive-usage-periods' })
+  @Cron(CronExpression.EVERY_5_SECONDS, { name: 'archive-usage-periods', waitForCompletion: true })
   @TrackJobExecution()
   @LogExecution('archive-usage-periods')
   @WithInstrumentation()
   async archiveBoxUsagePeriods() {
-    const lockKey = 'archive-usage-periods'
-    if (!(await this.redisLockProvider.lock(lockKey, 60))) {
-      return
-    }
-
-    await this.usagePeriodRepository.manager.transaction(async (transactionalEntityManager) => {
-      const usagePeriods = await transactionalEntityManager.find(BoxUsagePeriod, {
-        where: {
-          endAt: Not(IsNull()),
-        },
-        order: {
-          startAt: 'ASC',
-        },
-        take: 5000,
-      })
-
-      if (usagePeriods.length === 0) {
-        return
-      }
-
-      this.logger.debug(`Found ${usagePeriods.length} usage periods to archive`)
-
-      await transactionalEntityManager.delete(
-        BoxUsagePeriod,
-        usagePeriods.map((usagePeriod) => usagePeriod.id),
+    const result = await this.usagePeriodRepository.manager.transaction(async (transactionalEntityManager) => {
+      const activeTable = quoteTablePath(transactionalEntityManager.getRepository(BoxUsagePeriod).metadata.tablePath)
+      const archiveTable = quoteTablePath(
+        transactionalEntityManager.getRepository(BoxUsagePeriodArchive).metadata.tablePath,
       )
-      await transactionalEntityManager.save(usagePeriods.map(BoxUsagePeriodArchive.fromBoxUsagePeriod))
+      const rows = await transactionalEntityManager.query<ArchiveBatchResult[]>(
+        `WITH claimed AS (
+          SELECT p.id, p."boxId", p."organizationId", p."startAt", p."endAt",
+                 p.cpu, p.gpu, p.mem, p.disk, p.region, p."boxClass", p."regionType"
+          FROM ${activeTable} p
+          WHERE p."endAt" IS NOT NULL
+          ORDER BY p."startAt", p.id
+          LIMIT $1
+          FOR UPDATE OF p SKIP LOCKED
+        ), inserted AS (
+          INSERT INTO ${archiveTable} (
+            id, "boxId", "organizationId", "startAt", "endAt",
+            cpu, gpu, mem, disk, region, "boxClass", "regionType"
+          )
+          SELECT id, "boxId", "organizationId", "startAt", "endAt",
+                 cpu, gpu, mem, disk, region, "boxClass", "regionType"
+          FROM claimed
+          ON CONFLICT (id) DO NOTHING
+          RETURNING id
+        ), deleted AS (
+          DELETE FROM ${activeTable} p
+          USING inserted i
+          WHERE p.id = i.id
+          RETURNING p.id
+        )
+        SELECT
+          (SELECT COUNT(*)::int FROM claimed) AS claimed,
+          (SELECT COUNT(*)::int FROM inserted) AS archived,
+          (SELECT COUNT(*)::int FROM deleted) AS deleted`,
+        [ARCHIVE_BATCH_SIZE],
+      )
+      const row = rows[0] ?? { claimed: 0, archived: 0, deleted: 0 }
+      return {
+        claimed: Number(row.claimed),
+        archived: Number(row.archived),
+        deleted: Number(row.deleted),
+      }
     })
 
-    await this.redisLockProvider.unlock(lockKey)
+    if (result.claimed > 0) {
+      this.logger.debug(`Archived ${result.archived} of ${result.claimed} closed usage periods`)
+    }
+    if (result.claimed !== result.archived || result.archived !== result.deleted) {
+      this.logger.error(
+        `Usage archive invariant conflict: claimed=${result.claimed} archived=${result.archived} deleted=${result.deleted}`,
+      )
+    }
   }
 
   private async waitForLock(boxId: string) {
