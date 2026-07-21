@@ -13,9 +13,10 @@ The public wire fields are unified as:
 ```text
 auto_pause:  integer seconds, 0 disables
 auto_delete: integer seconds, 0 disables
+auto_resume: boolean, default true; user operations resume an auto-paused box when enabled
 ```
 
-The default `auto_pause` is `900` seconds and the default `auto_delete` is `0`. Create, read, the Rust runtime, and the Python, Node.js, C, and Go SDKs all use the same second-level semantics.
+The default `auto_pause` is `900` seconds, the default `auto_delete` is `0`, and the default `auto_resume` is `true`. Create and read APIs and the Rust, Python, Node.js, C, and Go SDK boundaries use these same semantics. AutoResume is implemented by the cloud control plane; the embedded local runtime has no paused state to resume.
 
 The internal database columns are `autoPause`, `autoDelete`, `autoResume`, and `lastActivityAt`. Public names remain stable.
 
@@ -53,11 +54,11 @@ AutoDelete only selects boxes that satisfy all of the following:
 
 The HTTP runner proxy uses an explicit policy instead of an implicit default at a shared entry point:
 
-| Path | activity | autoResume |
-|---|---:|---:|
-| Exec and execution controls | true | true |
-| Files | true | true |
-| Metrics | false | false |
+| Path                        | activity | autoResume |
+| --------------------------- | -------: | ---------: |
+| Exec and execution controls |     true |       true |
+| Files                       |     true |       true |
+| Metrics                     |    false |      false |
 
 WebSocket attach can trigger AutoResume, but the upgrade itself does not refresh activity. Activity is written only after the proxy is established and a non-empty client data frame is received. Activity writes are throttled by the Redis lock TTL and later flushed to the database by a periodic task.
 
@@ -83,7 +84,7 @@ The distributed lock carries a random owner token and is released through a Redi
 
 AutoPause and AutoDelete run every 10 seconds and each uses a global worker lock. Candidate boxes must also acquire a per-box state lock.
 
-Activity is written to Redis first and flushed to the database in batches, so relying only on SQL candidates creates a stale window of at most one flush cycle. AutoPause re-reads the Redis-preferred latest time via `BoxActivityService.getLastActivityAt` after acquiring the per-box lock; if there has been recent activity, it skips the box.
+Activity is written to Redis first and flushed to the database in batches. AutoPause re-reads the Redis-preferred latest time via `BoxActivityService.getLastActivityAt` after acquiring the per-box lock; if there has been recent activity, it skips the box. AutoDelete intentionally uses the persisted SQL timestamp selected under the stopped-box policy.
 
 State writes use conditional updates:
 
@@ -92,11 +93,10 @@ State writes use conditional updates:
 
 Therefore, if a user changes the policy, manually starts or stops the box, or another worker commits a state change after the candidate query, the stale candidate cannot overwrite the new state.
 
-## Removed Fields and Endpoints
+## Legacy Fields and Endpoints
 
-- Legacy minute fields `autoStopInterval` and `autoDelete` have been removed.
-- Legacy second field `autoDeleteIntervalSeconds` has been renamed to `auto_delete`.
-- `POST /box/{boxIdOrName}/autostop/{interval}` and `POST /box/{boxIdOrName}/autodelete/{interval}` endpoints have been removed.
+- Legacy minute database columns `autoStopInterval` and `autoDeleteInterval` are migrated to second-based `autoPause` and `autoDelete`.
+- `POST /box/{boxIdOrName}/autostop/{interval}` and `POST /box/{boxIdOrName}/autodelete/{interval}` remain supported as deprecated compatibility endpoints. Their path parameter remains minutes and is converted to seconds internally.
 
 ## Backend and SDK Boundary
 
@@ -107,8 +107,10 @@ Therefore, if a user changes the policy, manually starts or stops the box, or an
 
 The local runtime:
 
-- Preserves existing behavior when no lifecycle policy is explicitly configured;
-- `create` / `get_or_create` returns `Unsupported` when either lifecycle option is supplied.
+- Preserves the historical remove-on-stop behavior when `auto_delete` is unset;
+- Uses `auto_delete=0` to keep a stopped box and a positive value for immediate local remove-on-stop;
+- Returns `Unsupported` when AutoPause is explicitly configured, because it has no lifecycle sweeper;
+- Does not implement cloud AutoResume because local boxes do not enter an AutoPaused state.
 
 The C ABI uses `uint32_t` for `auto_pause` and `uint32_t` for `auto_delete`, with `0` meaning disabled in both cases. The Go bridge, Python, and Node bindings use corresponding non-negative integer types.
 

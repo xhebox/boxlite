@@ -174,9 +174,9 @@ export interface JsBoxInfo {
   image: string;
   cpus: number;
   memoryMib: number;
-  autoPause?: number;
-  autoDelete?: number;
-  autoResume?: boolean;
+  autoPause: number;
+  autoDelete: number;
+  autoResume: boolean;
   healthStatus: JsHealthStatus;
 }
 
