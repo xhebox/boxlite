@@ -74,19 +74,19 @@ export class BoxResponseDto {
     description: 'Idle time in seconds before AutoPause; 0 disables AutoPause',
     example: 900,
   })
-  auto_pause_interval: number
+  auto_pause: number
 
   @ApiProperty({
     description: 'Stopped time in seconds before AutoDelete; 0 disables AutoDelete',
     example: 604800,
   })
-  auto_delete_interval: number
+  auto_delete: number
 
   @ApiProperty({
     description: 'Whether the box should be automatically resumed on proxy access',
     example: true,
   })
-  auto_resume_enabled: boolean
+  auto_resume: boolean
 }
 
 @ApiSchema({ name: 'ListBoxesResponse' })

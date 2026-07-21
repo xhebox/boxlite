@@ -124,11 +124,11 @@ pub(crate) struct CreateBoxRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tty: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_pause_interval: Option<u32>,
+    pub auto_pause: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_delete_interval: Option<u32>,
+    pub auto_delete: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_resume_enabled: Option<bool>,
+    pub auto_resume: Option<bool>,
 }
 
 impl CreateBoxRequest {
@@ -180,9 +180,9 @@ impl CreateBoxRequest {
             auto_remove: Some(options.auto_remove),
             detach: Some(options.detach),
             tty: options.tty.then_some(true),
-            auto_pause_interval: options.auto_pause_interval,
-            auto_delete_interval: options.auto_delete_interval,
-            auto_resume_enabled: options.auto_resume_enabled,
+            auto_pause: options.auto_pause,
+            auto_delete: options.auto_delete,
+            auto_resume: options.auto_resume,
         }
     }
 }
@@ -246,12 +246,12 @@ pub(crate) struct BoxResponse {
     /// honest answer when it cannot say.
     #[serde(default)]
     pub exit_code: Option<i32>,
-    #[serde(default = "default_auto_pause_interval")]
-    pub auto_pause_interval: u32,
-    #[serde(default = "default_auto_delete_interval")]
-    pub auto_delete_interval: u32,
-    #[serde(default = "default_auto_resume_enabled")]
-    pub auto_resume_enabled: bool,
+    #[serde(default = "default_auto_pause")]
+    pub auto_pause: u32,
+    #[serde(default = "default_auto_delete")]
+    pub auto_delete: u32,
+    #[serde(default = "default_auto_resume")]
+    pub auto_resume: bool,
 }
 
 impl BoxResponse {
@@ -288,24 +288,24 @@ impl BoxResponse {
             cpus: self.cpus,
             memory_mib: self.memory_mib,
             labels: self.labels.clone(),
-            auto_pause_interval: self.auto_pause_interval,
-            auto_delete_interval: self.auto_delete_interval,
-            auto_resume_enabled: self.auto_resume_enabled,
+            auto_pause: self.auto_pause,
+            auto_delete: self.auto_delete,
+            auto_resume: self.auto_resume,
             health_status: crate::litebox::HealthStatus::new(), // REST API doesn't provide health status
             exit_code: self.exit_code,
         })
     }
 }
 
-fn default_auto_pause_interval() -> u32 {
+fn default_auto_pause() -> u32 {
     900
 }
 
-fn default_auto_delete_interval() -> u32 {
+fn default_auto_delete() -> u32 {
     0
 }
 
-fn default_auto_resume_enabled() -> bool {
+fn default_auto_resume() -> bool {
     true
 }
 
@@ -546,9 +546,9 @@ mod tests {
             }]),
             auto_remove: Some(true),
             detach: None,
-            auto_pause_interval: Some(900),
-            auto_delete_interval: Some(604800),
-            auto_resume_enabled: None,
+            auto_pause: Some(900),
+            auto_delete: Some(604800),
+            auto_resume: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"name\":\"mybox\""));
@@ -580,8 +580,8 @@ mod tests {
                 hosts: vec!["api.openai.com".into()],
                 placeholder: "<BOXLITE_SECRET:openai>".into(),
             }],
-            auto_pause_interval: Some(1800),
-            auto_delete_interval: Some(604800),
+            auto_pause: Some(1800),
+            auto_delete: Some(604800),
             ..Default::default()
         };
         let req = CreateBoxRequest::from_options(&opts, Some("test-box".into()));
@@ -599,8 +599,8 @@ mod tests {
             Some(vec!["api.openai.com".into()])
         );
         assert_eq!(req.secrets.as_ref().map(Vec::len), Some(1));
-        assert_eq!(req.auto_pause_interval, Some(1800));
-        assert_eq!(req.auto_delete_interval, Some(604800));
+        assert_eq!(req.auto_pause, Some(1800));
+        assert_eq!(req.auto_delete, Some(604800));
         assert_eq!(
             req.secrets.as_ref().unwrap()[0].placeholder,
             "<BOXLITE_SECRET:openai>"
@@ -676,8 +676,8 @@ mod tests {
         assert_eq!(resp.status, "running");
         assert_eq!(resp.pid, Some(1234));
         assert_eq!(resp.cpus, 2);
-        assert_eq!(resp.auto_pause_interval, 900);
-        assert_eq!(resp.auto_delete_interval, 0);
+        assert_eq!(resp.auto_pause, 900);
+        assert_eq!(resp.auto_delete, 0);
     }
 
     #[test]
@@ -694,17 +694,17 @@ mod tests {
             memory_mib: 512,
             labels: HashMap::new(),
             exit_code: None,
-            auto_pause_interval: 1800,
-            auto_delete_interval: 604800,
-            auto_resume_enabled: true,
+            auto_pause: 1800,
+            auto_delete: 604800,
+            auto_resume: true,
         };
         let info = resp.to_box_info().expect("valid ULID box_id should parse");
         assert_eq!(info.name.as_deref(), Some("mybox"));
         assert_eq!(info.image, "python:3.11");
         assert_eq!(info.cpus, 2);
         assert_eq!(info.memory_mib, 512);
-        assert_eq!(info.auto_pause_interval, 1800);
-        assert_eq!(info.auto_delete_interval, 604800);
+        assert_eq!(info.auto_pause, 1800);
+        assert_eq!(info.auto_delete, 604800);
     }
 
     #[test]
@@ -723,9 +723,9 @@ mod tests {
             memory_mib: 256,
             labels: HashMap::new(),
             exit_code: None,
-            auto_pause_interval: 900,
-            auto_delete_interval: 0,
-            auto_resume_enabled: true,
+            auto_pause: 900,
+            auto_delete: 0,
+            auto_resume: true,
         };
         let info = resp.to_box_info().expect("UUID box_id should parse");
         assert_eq!(info.id.as_str(), "d406c59d-eb09-4bc3-9b3a-62455c7e8f32");
@@ -751,9 +751,9 @@ mod tests {
             memory_mib: 256,
             labels: HashMap::new(),
             exit_code: None,
-            auto_pause_interval: 900,
-            auto_delete_interval: 0,
-            auto_resume_enabled: true,
+            auto_pause: 900,
+            auto_delete: 0,
+            auto_resume: true,
         };
         assert!(mk("").to_box_info().is_err(), "empty");
         assert!(mk("a/b").to_box_info().is_err(), "slash");
@@ -823,9 +823,9 @@ mod tests {
             memory_mib: 512,
             labels: HashMap::new(),
             exit_code: None,
-            auto_pause_interval: 900,
-            auto_delete_interval: 0,
-            auto_resume_enabled: true,
+            auto_pause: 900,
+            auto_delete: 0,
+            auto_resume: true,
         };
 
         // Legacy transient statuses map to Unknown (no longer valid)

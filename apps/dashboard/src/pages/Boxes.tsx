@@ -439,9 +439,9 @@ const Boxes: React.FC = () => {
       await stopBoxViaBoxApi(api, selectedOrganization.id, id)
       toast.success(
         `Stopping box with ID: ${id}`,
-        boxToStop?.autoDeleteInterval !== undefined && boxToStop.autoDeleteInterval > 0
+        boxToStop?.autoDelete !== undefined && boxToStop.autoDelete > 0
           ? {
-              description: `This box will be deleted automatically in ${formatLifecycleSeconds(boxToStop.autoDeleteInterval)} unless it is started again.`,
+              description: `This box will be deleted automatically in ${formatLifecycleSeconds(boxToStop.autoDelete)} unless it is started again.`,
             }
           : undefined,
       )

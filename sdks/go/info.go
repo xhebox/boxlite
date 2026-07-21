@@ -31,9 +31,9 @@ type BoxInfo struct {
 	PID                int
 	CPUs               int
 	MemoryMiB          int
-	AutoPauseInterval  uint32
-	AutoDeleteInterval uint32
-	AutoResumeEnabled  bool
+	AutoPause  uint32
+	AutoDelete uint32
+	AutoResume  bool
 	CreatedAt          time.Time
 }
 
@@ -123,9 +123,9 @@ func cBoxInfoToGo(info *C.CBoxInfo) BoxInfo {
 		PID:                pid,
 		CPUs:               int(info.cpus),
 		MemoryMiB:          int(info.memory_mib),
-		AutoPauseInterval:  uint32(info.auto_pause_interval),
-		AutoDeleteInterval: uint32(info.auto_delete_interval),
-		AutoResumeEnabled:  info.auto_resume_enabled != 0,
+		AutoPause:  uint32(info.auto_pause),
+		AutoDelete: uint32(info.auto_delete),
+		AutoResume:  info.auto_resume != 0,
 		CreatedAt:          time.Unix(int64(info.created_at), 0),
 	}
 }

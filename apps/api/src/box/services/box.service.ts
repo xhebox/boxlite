@@ -79,8 +79,8 @@ import { assertWithinPerBoxLimits } from './per-box-limits'
 import {
   AUTO_DELETE_DISABLED,
   AUTO_PAUSE_DISABLED,
-  DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS,
-  DEFAULT_AUTO_RESUME_ENABLED,
+  DEFAULT_AUTO_PAUSE_SECONDS,
+  DEFAULT_AUTO_RESUME,
 } from '../constants/box-lifecycle.constants'
 
 // TODO(image-rewrite): resource defaults previously came from the removed image subsystem;
@@ -237,13 +237,13 @@ export class BoxService {
       }
 
       const lifecyclePolicy = this.resolveLifecyclePolicy({
-        autoPauseInterval: createBoxDto.autoPauseInterval,
-        autoDeleteInterval: createBoxDto.autoDeleteInterval,
-        autoResumeEnabled: createBoxDto.autoResumeEnabled,
+        autoPause: createBoxDto.autoPause,
+        autoDelete: createBoxDto.autoDelete,
+        autoResume: createBoxDto.autoResume,
       })
-      box.autoPauseInterval = lifecyclePolicy.autoPauseInterval
-      box.autoDeleteInterval = lifecyclePolicy.autoDeleteInterval
-      box.autoResumeEnabled = lifecyclePolicy.autoResumeEnabled
+      box.autoPause = lifecyclePolicy.autoPause
+      box.autoDelete = lifecyclePolicy.autoDelete
+      box.autoResume = lifecyclePolicy.autoResume
 
       if (createBoxDto.volumes !== undefined) {
         box.volumes = this.resolveVolumes(createBoxDto.volumes)
@@ -294,13 +294,13 @@ export class BoxService {
     }
 
     const lifecyclePolicy = this.resolveLifecyclePolicy({
-      autoPauseInterval: createBoxDto.autoPauseInterval,
-      autoDeleteInterval: createBoxDto.autoDeleteInterval,
-      autoResumeEnabled: createBoxDto.autoResumeEnabled,
+      autoPause: createBoxDto.autoPause,
+      autoDelete: createBoxDto.autoDelete,
+      autoResume: createBoxDto.autoResume,
     })
-    updateData.autoPauseInterval = lifecyclePolicy.autoPauseInterval
-    updateData.autoDeleteInterval = lifecyclePolicy.autoDeleteInterval
-    updateData.autoResumeEnabled = lifecyclePolicy.autoResumeEnabled
+    updateData.autoPause = lifecyclePolicy.autoPause
+    updateData.autoDelete = lifecyclePolicy.autoDelete
+    updateData.autoResume = lifecyclePolicy.autoResume
 
     if (createBoxDto.networkBlockAll !== undefined) {
       updateData.networkBlockAll = createBoxDto.networkBlockAll
@@ -1259,7 +1259,7 @@ export class BoxService {
     const box = await this.findOneByIdOrName(boxIdOrName, organizationId)
 
     const updateData: Partial<Box> = {
-      autoPauseInterval: this.minutesToSeconds(interval),
+      autoPause: this.minutesToSeconds(interval),
     }
 
     return await this.boxRepository.update(box.id, { updateData, entity: box })
@@ -1269,7 +1269,7 @@ export class BoxService {
     const box = await this.findOneByIdOrName(boxIdOrName, organizationId)
 
     const updateData: Partial<Box> = {
-      autoDeleteInterval: interval <= 0 ? 0 : this.minutesToSeconds(interval),
+      autoDelete: interval <= 0 ? 0 : this.minutesToSeconds(interval),
     }
 
     return await this.boxRepository.update(box.id, { updateData, entity: box })
@@ -1430,26 +1430,26 @@ export class BoxService {
 
   private resolveLifecyclePolicy(
     input: {
-      autoPauseInterval?: number
-      autoDeleteInterval?: number
-      autoResumeEnabled?: boolean
+      autoPause?: number
+      autoDelete?: number
+      autoResume?: boolean
     },
-  ): { autoPauseInterval: number; autoDeleteInterval: number; autoResumeEnabled: boolean } {
-    const autoPauseInterval = input.autoPauseInterval ?? DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS
-    const autoDeleteInterval = input.autoDeleteInterval ?? AUTO_DELETE_DISABLED
-    const autoResumeEnabled = input.autoResumeEnabled ?? DEFAULT_AUTO_RESUME_ENABLED
+  ): { autoPause: number; autoDelete: number; autoResume: boolean } {
+    const autoPause = input.autoPause ?? DEFAULT_AUTO_PAUSE_SECONDS
+    const autoDelete = input.autoDelete ?? AUTO_DELETE_DISABLED
+    const autoResume = input.autoResume ?? DEFAULT_AUTO_RESUME
 
-    if (!Number.isInteger(autoPauseInterval) || autoPauseInterval < AUTO_PAUSE_DISABLED) {
+    if (!Number.isInteger(autoPause) || autoPause < AUTO_PAUSE_DISABLED) {
       throw new BadRequestError('Auto-pause interval must be a non-negative integer number of seconds')
     }
-    if (!Number.isInteger(autoDeleteInterval) || autoDeleteInterval < AUTO_DELETE_DISABLED) {
+    if (!Number.isInteger(autoDelete) || autoDelete < AUTO_DELETE_DISABLED) {
       throw new BadRequestError('Auto-delete interval must be a non-negative integer number of seconds')
     }
-    if (autoDeleteInterval > 0 && autoDeleteInterval <= autoPauseInterval) {
+    if (autoDelete > 0 && autoDelete <= autoPause) {
       throw new BadRequestError('Auto-delete interval must be greater than auto-pause interval')
     }
 
-    return { autoPauseInterval, autoDeleteInterval, autoResumeEnabled }
+    return { autoPause, autoDelete, autoResume }
   }
 
   private resolveNetworkAllowList(networkAllowList: string): string {

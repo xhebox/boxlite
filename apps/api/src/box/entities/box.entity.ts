@@ -14,8 +14,8 @@ import { BoxLastActivity } from './box-last-activity.entity'
 import { BOX_ID_LENGTH, BOX_ID_REGEX, generateBoxId } from '../utils/box-id.util'
 import {
   AUTO_DELETE_DISABLED,
-  DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS,
-  DEFAULT_AUTO_RESUME_ENABLED,
+  DEFAULT_AUTO_PAUSE_SECONDS,
+  DEFAULT_AUTO_RESUME,
 } from '../constants/box-lifecycle.constants'
 
 @Entity('box')
@@ -151,14 +151,14 @@ export class Box {
   @OneToOne(() => BoxLastActivity, (lastActivity) => lastActivity.box)
   lastActivityAt?: BoxLastActivity
 
-  @Column({ default: DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS, type: 'int' })
-  autoPauseInterval: number = DEFAULT_AUTO_PAUSE_INTERVAL_SECONDS
+  @Column({ default: DEFAULT_AUTO_PAUSE_SECONDS, type: 'int' })
+  autoPause: number = DEFAULT_AUTO_PAUSE_SECONDS
 
   @Column({ default: AUTO_DELETE_DISABLED, type: 'int' })
-  autoDeleteInterval: number = AUTO_DELETE_DISABLED
+  autoDelete: number = AUTO_DELETE_DISABLED
 
-  @Column({ default: DEFAULT_AUTO_RESUME_ENABLED, type: 'boolean' })
-  autoResumeEnabled: boolean = DEFAULT_AUTO_RESUME_ENABLED
+  @Column({ default: DEFAULT_AUTO_RESUME, type: 'boolean' })
+  autoResume: boolean = DEFAULT_AUTO_RESUME
 
   @Column({ default: false, type: 'boolean' })
   pending: boolean | undefined = false

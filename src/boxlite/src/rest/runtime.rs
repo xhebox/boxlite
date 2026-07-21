@@ -45,9 +45,9 @@ fn litebox_from_rest(rest_box: Arc<RestBox>) -> LiteBox {
 impl RuntimeBackend for RestRuntime {
     async fn create(&self, options: BoxOptions, name: Option<String>) -> BoxliteResult<LiteBox> {
         crate::runtime::types::BoxLifecyclePolicy {
-            auto_pause_interval: options.auto_pause_interval.unwrap_or(900),
-            auto_delete_interval: options.auto_delete_interval.unwrap_or(0),
-            auto_resume_enabled: options.auto_resume_enabled.unwrap_or(true),
+            auto_pause: options.auto_pause.unwrap_or(900),
+            auto_delete: options.auto_delete.unwrap_or(0),
+            auto_resume: options.auto_resume.unwrap_or(true),
         }
         .validate()?;
         let req = CreateBoxRequest::from_options(&options, name);

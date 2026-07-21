@@ -23,8 +23,8 @@ export type BoxApiNetworkSpec = {
 
 export type LifecyclePolicy = {
   autoPauseIntervalSeconds: number
-  autoDeleteInterval: number
-  autoResumeEnabled?: boolean
+  autoDelete: number
+  autoResume?: boolean
 }
 
 export type CreateBoxParams = {
@@ -35,8 +35,8 @@ export type CreateBoxParams = {
   network?: BoxApiNetworkSpec
   resources?: Resources
   autoPauseIntervalSeconds?: number
-  autoDeleteInterval?: number
-  autoResumeEnabled?: boolean
+  autoDelete?: number
+  autoResume?: boolean
 }
 
 // Request body shape defined by openapi/box.openapi.yaml CreateBoxRequest.
@@ -49,9 +49,9 @@ export type BoxApiCreateRequest = {
   env?: Record<string, string>
   user?: string
   network?: BoxApiNetworkSpec
-  auto_pause_interval?: number
-  auto_delete_interval?: number
-  auto_resume_enabled?: boolean
+  auto_pause?: number
+  auto_delete?: number
+  auto_resume?: boolean
 }
 
 export type BoxApiBoxResponse = {
@@ -64,9 +64,9 @@ export type BoxApiBoxResponse = {
   cpus: number
   memory_mib: number
   labels: Record<string, string>
-  auto_pause_interval: number
-  auto_delete_interval: number
-  auto_resume_enabled?: boolean
+  auto_pause: number
+  auto_delete: number
+  auto_resume?: boolean
 }
 
 export function toBoxApiCreateRequest(params?: CreateBoxParams): BoxApiCreateRequest {
@@ -81,9 +81,9 @@ export function toBoxApiCreateRequest(params?: CreateBoxParams): BoxApiCreateReq
     memory_mib: p.resources?.memory !== undefined ? p.resources.memory * 1024 : undefined,
     disk_size_gb: p.resources?.disk,
     network: p.network,
-    auto_pause_interval: p.autoPauseIntervalSeconds,
-    auto_delete_interval: p.autoDeleteInterval,
-    auto_resume_enabled: p.autoResumeEnabled ?? true,
+    auto_pause: p.autoPauseIntervalSeconds,
+    auto_delete: p.autoDelete,
+    auto_resume: p.autoResume ?? true,
   }
 }
 
@@ -91,10 +91,10 @@ export function validateLifecyclePolicy(policy: LifecyclePolicy): string | null 
   if (!Number.isInteger(policy.autoPauseIntervalSeconds) || policy.autoPauseIntervalSeconds < 0) {
     return 'Auto-pause must be a non-negative integer number of seconds.'
   }
-  if (!Number.isInteger(policy.autoDeleteInterval) || policy.autoDeleteInterval < 0) {
+  if (!Number.isInteger(policy.autoDelete) || policy.autoDelete < 0) {
     return 'Auto-delete must be 0 (disabled) or a positive integer number of seconds.'
   }
-  if (policy.autoDeleteInterval > 0 && policy.autoDeleteInterval <= policy.autoPauseIntervalSeconds) {
+  if (policy.autoDelete > 0 && policy.autoDelete <= policy.autoPauseIntervalSeconds) {
     return 'Auto-delete must be greater than auto-pause.'
   }
   return null

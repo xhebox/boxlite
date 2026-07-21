@@ -26,9 +26,9 @@ pub struct CBoxInfo {
     pub pid: c_int,
     pub cpus: c_int,
     pub memory_mib: c_int,
-    pub auto_pause_interval: u32,
-    pub auto_delete_interval: u32,
-    pub auto_resume_enabled: c_int,
+    pub auto_pause: u32,
+    pub auto_delete: u32,
+    pub auto_resume: c_int,
     pub created_at: i64,
 }
 
@@ -71,9 +71,9 @@ impl CBoxInfo {
             pid: info.pid.map(|p| p as c_int).unwrap_or(0),
             cpus: info.cpus as c_int,
             memory_mib: info.memory_mib as c_int,
-            auto_pause_interval: info.auto_pause_interval,
-            auto_delete_interval: info.auto_delete_interval,
-            auto_resume_enabled: if info.auto_resume_enabled { 1 } else { 0 },
+            auto_pause: info.auto_pause,
+            auto_delete: info.auto_delete,
+            auto_resume: if info.auto_resume { 1 } else { 0 },
             created_at: info.created_at.timestamp(),
         }
     }

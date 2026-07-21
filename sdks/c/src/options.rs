@@ -168,19 +168,19 @@ pub unsafe extern "C" fn boxlite_options_set_auto_resume_enabled(
 
 pub unsafe fn options_set_auto_pause_interval(handle: *mut OptionsHandle, seconds: u32) {
     if let Some(handle) = unsafe { handle.as_mut() } {
-        handle.options.auto_pause_interval = Some(seconds);
+        handle.options.auto_pause = Some(seconds);
     }
 }
 
 pub unsafe fn options_set_auto_delete_interval(handle: *mut OptionsHandle, seconds: u32) {
     if let Some(handle) = unsafe { handle.as_mut() } {
-        handle.options.auto_delete_interval = Some(seconds);
+        handle.options.auto_delete = Some(seconds);
     }
 }
 
 pub unsafe fn options_set_auto_resume_enabled(handle: *mut OptionsHandle, val: c_int) {
     if let Some(handle) = unsafe { handle.as_mut() } {
-        handle.options.auto_resume_enabled = Some(val != 0);
+        handle.options.auto_resume = Some(val != 0);
     }
 }
 

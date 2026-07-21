@@ -1,25 +1,25 @@
-# AutoPause / AutoResume / AutoDelete 设计
+# AutoPause / AutoResume / AutoDelete Design
 
-## 范围
+## Scope
 
-第一阶段复用现有 `Stop` / `Start`，不创建 Memory Snapshot，不增加 `Paused` 状态，也不承诺保留内存、进程、终端会话或网络连接。持久化磁盘和 Volume 继续由已有存储生命周期管理。
+The first phase reuses the existing `Stop` / `Start` paths. It does not create memory snapshots, does not add a `Paused` state, and does not promise retention of memory, processes, terminal sessions, or network connections. Persistent disks and volumes continue to be managed by existing storage lifecycle policies.
 
-能力由云端控制面实现。REST backend 透传策略；嵌入式本地 backend 不运行清扫器，对显式的非默认生命周期配置返回 `BoxliteError::Unsupported`，避免静默忽略。
+The feature is implemented by the cloud control plane. The REST backend forwards policies to the runner; the embedded local backend does not run a sweeper and returns `BoxliteError::Unsupported` for explicit non-default lifecycle configurations, to avoid silently ignoring them.
 
-## 对外契约
+## Public Contract
 
-公开 wire 字段统一为：
+The public wire fields are unified as:
 
 ```text
-auto_pause_interval:  integer seconds, 0 disables
-auto_delete_interval: integer seconds, 0 disables
+auto_pause:  integer seconds, 0 disables
+auto_delete: integer seconds, 0 disables
 ```
 
-默认 AutoPause 为 `900` 秒，默认 AutoDelete 为 `0`。创建、读取、Rust runtime，以及 Python、Node.js、C、Go SDK 使用同一秒级语义。
+The default `auto_pause` is `900` seconds and the default `auto_delete` is `0`. Create, read, the Rust runtime, and the Python, Node.js, C, and Go SDKs all use the same second-level semantics.
 
-内部数据库字段为 `autoPauseInterval`、`autoDeleteInterval`、`autoResumeEnabled` 和 `lastActivityAt`。公开名称保持稳定。
+The internal database columns are `autoPause`, `autoDelete`, `autoResume`, and `lastActivityAt`. Public names remain stable.
 
-## 状态机
+## State Machine
 
 ```text
 STARTED -- idle deadline --> STOPPING --> STOPPED
@@ -29,93 +29,93 @@ STARTED -- idle deadline --> STOPPING --> STOPPED
 STOPPED -- delete deadline --> DESTROYING --> DESTROYED
 ```
 
-AutoPause 只选择以下 Box：
+AutoPause only selects boxes that satisfy all of the following:
 
 - `state = STARTED`
 - `desiredState = STARTED`
 - `pending = false`
-- `autoPauseInterval > 0`
-- 最后活动时间已超过秒级期限
+- `autoPause > 0`
+- The last activity time is older than the configured interval in seconds
 
-AutoDelete 只选择以下 Box：
+AutoDelete only selects boxes that satisfy all of the following:
 
 - `state = STOPPED`
 - `desiredState = STOPPED`
 - `pending = false`
-- `autoDeleteInterval > 0`
-- `lastActivityAt` 已超过秒级期限
+- `autoDelete > 0`
+- `lastActivityAt` is older than the configured interval in seconds
 
-`lastActivityAt` 是 AutoPause 和 AutoDelete 的共同计时标准。它在 Box 创建、状态变化或 Organization 变化时更新；因此 AutoDelete 从 Box 实际进入 `STOPPED`（或停止后最后一次被视作活动的事件）开始计时，而不是从发出 Stop 请求开始。
+`lastActivityAt` is the shared timing source for both AutoPause and AutoDelete. It is updated on box creation, state transitions, and organization changes; therefore AutoDelete starts counting from when the box actually entered `STOPPED` (or from the last event considered activity after stopping), not from when the Stop request was issued.
 
-AutoDelete `0` 表示禁用；不再支持旧 `-1` 禁用语义或“停止时立即删除”语义。
+`auto_delete = 0` means disabled; the legacy `-1` disable semantics and the "delete immediately on stop" semantics are no longer supported.
 
-## Activity policy
+## Activity Policy
 
-HTTP runner proxy 使用显式 policy，而不是共享入口的隐式默认值：
+The HTTP runner proxy uses an explicit policy instead of an implicit default at a shared entry point:
 
-| 路径 | activity | autoResume |
+| Path | activity | autoResume |
 |---|---:|---:|
-| Exec 和 execution controls | true | true |
+| Exec and execution controls | true | true |
 | Files | true | true |
 | Metrics | false | false |
 
-WebSocket attach 会触发 AutoResume，但 upgrade 本身不刷新 activity。只有代理建立后收到非空客户端数据帧才写入 activity。活动写入由 Redis lock TTL 节流，随后由周期任务批量刷新到数据库。
+WebSocket attach can trigger AutoResume, but the upgrade itself does not refresh activity. Activity is written only after the proxy is established and a non-empty client data frame is received. Activity writes are throttled by the Redis lock TTL and later flushed to the database by a periodic task.
 
-独立端口代理不写 activity，也不触发 AutoResume。这样 Metrics scrape、健康检查和外部端口流量不会使 Box 永久运行。
+Standalone port proxies do not write activity and do not trigger AutoResume, so metrics scrapes, health checks, and external port traffic cannot keep a box running indefinitely.
 
-## Strict AutoResume gate
+## Strict AutoResume Gate
 
-HTTP Exec/Files 和 WebSocket attach 共享 `BoxAutoResumeService`：
+HTTP Exec/Files and WebSocket attach share `BoxAutoResumeService`:
 
-1. 解析 canonical Box ID 和 Organization。
-2. activity操作先将时间写入Redis缓冲。
-3. 使用与生命周期清扫器相同的逐Box状态锁。
-4. `STARTED` 直接通过；`STOPPED` 通过条件更新提交 Start intent；正在 Start 的请求加入等待；正在 Stop 的请求先等待 `STOPPED`，再提交 Start。
-5. 释放短临界区状态锁，不在冷启动期间持锁。
-6. 通过Redis状态事件等待实际 `STARTED`，最长30秒。
-7. 只有成功到达 `STARTED` 后才向runner转发。
+1. Resolve the canonical box ID and organization.
+2. Activity-bearing operations first write the time to the Redis buffer.
+3. Acquire the same per-box state lock used by the lifecycle sweeper.
+4. `STARTED` passes through directly; `STOPPED` submits a Start intent via a conditional update; in-flight Start requests join the wait; in-flight Stop requests wait for `STOPPED` first, then submit Start.
+5. Release the short critical-section lock and do not hold it during cold start.
+6. Wait for the actual `STARTED` state via Redis state events, up to 30 seconds.
+7. Forward to the runner only after the box has successfully reached `STARTED`.
 
-waiter允许同一Box存在多个订阅者，并在订阅后重新读取状态，避免“第一次读取”和事件订阅之间丢事件。超时返回错误，不返回最后观察到的非目标状态。
+The waiter allows multiple subscribers for the same box and re-reads state after subscribing, avoiding lost events between the first read and event subscription. Timeouts return an error, not the last observed non-target state.
 
-分布式锁带随机owner token，并通过Redis Lua compare-and-delete释放；过期后旧worker不会误删新owner取得的锁。
+The distributed lock carries a random owner token and is released through a Redis Lua compare-and-delete; an expired lock from an old worker cannot accidentally delete a lock acquired by a new owner.
 
-## Sweeper与并发安全
+## Sweeper and Concurrency Safety
 
-AutoPause和AutoDelete每10秒运行一次，并各自使用全局worker锁。候选Box还要取得逐Box状态锁。
+AutoPause and AutoDelete run every 10 seconds and each uses a global worker lock. Candidate boxes must also acquire a per-box state lock.
 
-Activity先写Redis、后批量刷数据库，因此仅依赖SQL候选会产生最长一个flush周期的陈旧窗口。AutoPause在取得逐Box锁后通过 `BoxActivityService.getLastActivityAt` 重新读取Redis优先的最新时间；若最近有活动则跳过。
+Activity is written to Redis first and flushed to the database in batches, so relying only on SQL candidates creates a stale window of at most one flush cycle. AutoPause re-reads the Redis-preferred latest time via `BoxActivityService.getLastActivityAt` after acquiring the per-box lock; if there has been recent activity, it skips the box.
 
-状态写入使用条件更新：
+State writes use conditional updates:
 
-- AutoPause同时比较 `pending`、`state`、`desiredState` 和选中时的 `autoPauseInterval`；
-- AutoDelete同时比较 `pending`、`state`、`desiredState` 和 `autoDeleteInterval`。
+- AutoPause compares `pending`, `state`, `desiredState`, and the `autoPause` value at selection time.
+- AutoDelete compares `pending`, `state`, `desiredState`, and `autoDelete`.
 
-因此用户在候选查询后修改策略、手动Start/Stop，或另一个worker先提交状态变更时，旧候选不会覆盖新状态。
+Therefore, if a user changes the policy, manually starts or stops the box, or another worker commits a state change after the candidate query, the stale candidate cannot overwrite the new state.
 
-## 已删除的字段与端点
+## Removed Fields and Endpoints
 
-- 旧分钟字段 `autoStopInterval` 与 `autoDeleteInterval` 已删除。
-- 旧秒级字段 `autoDeleteIntervalSeconds` 已重命名为 `autoDeleteInterval`。
-- `POST /box/{boxIdOrName}/autostop/{interval}` 与 `POST /box/{boxIdOrName}/autodelete/{interval}` 端点已删除。
+- Legacy minute fields `autoStopInterval` and `autoDelete` have been removed.
+- Legacy second field `autoDeleteIntervalSeconds` has been renamed to `auto_delete`.
+- `POST /box/{boxIdOrName}/autostop/{interval}` and `POST /box/{boxIdOrName}/autodelete/{interval}` endpoints have been removed.
 
-## Backend与SDK边界
+## Backend and SDK Boundary
 
-`BoxLifecyclePolicy`在Rust核心层验证 sentinel和跨字段顺序。REST runtime：
+`BoxLifecyclePolicy` is validated in the Rust core layer for sentinel and cross-field ordering. The REST runtime:
 
-- create将显式options放入REST body；
-- Box response映射到 `BoxInfo`。
+- `create` puts explicit options in the REST body;
+- `Box` responses are mapped to `BoxInfo`.
 
-本地runtime：
+The local runtime:
 
-- 未显式配置策略时维持现有行为；
-- create/get_or_create收到任一生命周期option时返回 `Unsupported`。
+- Preserves existing behavior when no lifecycle policy is explicitly configured;
+- `create` / `get_or_create` returns `Unsupported` when either lifecycle option is supplied.
 
-C ABI使用 `uint32_t` AutoPause和 `uint32_t` AutoDelete，二者均以 `0` 表示禁用。Go bridge、Python和Node绑定使用对应的非负整数类型。
+The C ABI uses `uint32_t` for `auto_pause` and `uint32_t` for `auto_delete`, with `0` meaning disabled in both cases. The Go bridge, Python, and Node bindings use corresponding non-negative integer types.
 
-## 可观测性与故障语义
+## Observability and Failure Semantics
 
-- AutoResume的数据库、锁、状态失败会向调用者传播；不能best-effort转发。
-- suspended Organization沿用显式Start的403边界。
-- WebSocket升级失败关闭socket；HTTP错误保留控制面状态码。
-- Metrics和端口访问不会产生虚假activity。
-- runner仍是实际Box状态的来源；控制面只写desired state，状态同步更新actual state和`lastActivityAt`。
+- AutoResume database, lock, and state failures are propagated to the caller; best-effort forwarding is not allowed.
+- Suspended organizations keep the same 403 boundary used by explicit Start.
+- WebSocket upgrade failures close the socket; HTTP errors preserve the control plane status code.
+- Metrics and port access do not produce spurious activity.
+- The runner remains the source of truth for actual box state; the control plane only writes desired state, and state synchronization updates the actual state and `lastActivityAt`.

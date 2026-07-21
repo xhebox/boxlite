@@ -27,7 +27,7 @@ const SUPPORTED_BOX_IMAGES = [
   { id: 'node', name: 'Node.js', ref: 'ghcr.io/boxlite-ai/boxlite-agent-node:20260605-p0-r3', isDefault: false },
 ] as const
 
-const DEFAULTS = { cpu: 1, memory: 1, disk: 10, autoPauseIntervalSeconds: 900, autoDeleteInterval: 0 }
+const DEFAULTS = { cpu: 1, memory: 1, disk: 10, autoPauseIntervalSeconds: 900, autoDelete: 0 }
 
 const SUPPORT_EMAIL = 'support@boxlite.ai'
 
@@ -226,8 +226,8 @@ export const CreateBoxDialog = ({
   const [memory, setMemory] = useState(initialMemory)
   const [disk, setDisk] = useState(initialDisk)
   const [autoPauseIntervalSeconds, setAutoPauseIntervalSeconds] = useState(DEFAULTS.autoPauseIntervalSeconds)
-  const [autoDeleteInterval, setAutoDeleteInterval] = useState(DEFAULTS.autoDeleteInterval)
-  const [autoResumeEnabled, setAutoResumeEnabled] = useState(true)
+  const [autoDelete, setAutoDeleteInterval] = useState(DEFAULTS.autoDelete)
+  const [autoResume, setAutoResumeEnabled] = useState(true)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [capped, setCapped] = useState({ cpu: false, memory: false, disk: false })
@@ -250,7 +250,7 @@ export const CreateBoxDialog = ({
     setMemory(initialMemory)
     setDisk(initialDisk)
     setAutoPauseIntervalSeconds(DEFAULTS.autoPauseIntervalSeconds)
-    setAutoDeleteInterval(DEFAULTS.autoDeleteInterval)
+    setAutoDeleteInterval(DEFAULTS.autoDelete)
     setAutoResumeEnabled(true)
     setAdvancedOpen(false)
     setSubmitting(false)
@@ -277,7 +277,7 @@ export const CreateBoxDialog = ({
 
   const selectedImage = SUPPORTED_BOX_IMAGES.find((i) => i.ref === imageRef) ?? defaultImage
   const nameValid = !name || NAME_REGEX.test(name)
-  const lifecycleError = validateLifecyclePolicy({ autoPauseIntervalSeconds, autoDeleteInterval })
+  const lifecycleError = validateLifecyclePolicy({ autoPauseIntervalSeconds, autoDelete })
 
   const handleCreate = async () => {
     if (!selectedOrganization?.id) {
@@ -300,8 +300,8 @@ export const CreateBoxDialog = ({
         network: { mode: 'enabled' },
         resources: { cpu, memory, disk },
         autoPauseIntervalSeconds,
-        autoDeleteInterval,
-        autoResumeEnabled,
+        autoDelete,
+        autoResume,
       })
       onCreated?.(box)
       toast.success('Box created')
@@ -453,7 +453,7 @@ export const CreateBoxDialog = ({
                       type="number"
                       min={0}
                       step={1}
-                      value={autoDeleteInterval}
+                      value={autoDelete}
                       onChange={(event) => setAutoDeleteInterval(Number(event.target.value))}
                       className="border border-border bg-card px-3 py-[9px] font-mono text-[13px] outline-none focus:border-brand"
                     />
@@ -463,7 +463,7 @@ export const CreateBoxDialog = ({
                   <span className="font-mono text-[10px] uppercase tracking-[1px]">Auto-resume on proxy access</span>
                   <Switch
                     aria-label="Auto-resume on proxy access"
-                    checked={autoResumeEnabled}
+                    checked={autoResume}
                     onCheckedChange={setAutoResumeEnabled}
                   />
                 </label>

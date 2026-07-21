@@ -21,7 +21,7 @@ const activeAuth = {
 
 function makeHarness() {
   const boxService = {
-    findOneByIdOrName: jest.fn().mockResolvedValue({ id: 'box-uuid', runnerId: 'runner-1', autoResumeEnabled: true }),
+    findOneByIdOrName: jest.fn().mockResolvedValue({ id: 'box-uuid', runnerId: 'runner-1', autoResume: true }),
     updateLastActivityAt: jest.fn().mockResolvedValue(undefined),
   }
   const runnerService = {
@@ -86,10 +86,10 @@ describe('BoxliteProxyController', () => {
     expect(proxyHandler).not.toHaveBeenCalled()
   })
 
-  it('does not auto-resume a box whose autoResumeEnabled switch is off', async () => {
+  it('does not auto-resume a box whose autoResume switch is off', async () => {
     jest.mocked(createProxyMiddleware).mockReturnValue(jest.fn() as never)
     const { controller, boxService, autoResume } = makeHarness()
-    boxService.findOneByIdOrName.mockResolvedValue({ id: 'box-uuid', runnerId: 'runner-1', autoResumeEnabled: false })
+    boxService.findOneByIdOrName.mockResolvedValue({ id: 'box-uuid', runnerId: 'runner-1', autoResume: false })
 
     await controller.proxyExec(activeAuth as never, 'public-box', { url: '/exec' } as never, {} as never, jest.fn())
 

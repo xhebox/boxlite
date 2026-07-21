@@ -1137,9 +1137,9 @@ mod owned_ffi_ptr_nested_leak_tests {
             cpus: 1,
             memory_mib: 256,
             created_at: 0,
-            auto_pause_interval: 900,
-            auto_delete_interval: 0,
-            auto_resume_enabled: 1,
+            auto_pause: 900,
+            auto_delete: 0,
+            auto_resume: 1,
         });
 
         let owned = OwnedFfiPtr::new_with(payload, crate::info::free_box_info_ptr);
@@ -1207,9 +1207,9 @@ mod owned_ffi_ptr_nested_leak_tests {
             cpus: 2,
             memory_mib: 512,
             created_at: 0,
-            auto_pause_interval: 900,
-            auto_delete_interval: 0,
-            auto_resume_enabled: 1,
+            auto_pause: 900,
+            auto_delete: 0,
+            auto_resume: 1,
         }];
         let items_ptr = items_vec.as_mut_ptr();
         let items_len = items_vec.len();

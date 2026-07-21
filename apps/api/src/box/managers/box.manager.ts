@@ -95,9 +95,9 @@ export class BoxManager implements TrackableJobExecutions, OnApplicationShutdown
               desiredState: BoxDesiredState.STARTED,
             })
             .andWhere('box.pending != true')
-            .andWhere('box."autoPauseInterval" != 0')
+            .andWhere('box."autoPause" != 0')
             .andWhere(
-              'COALESCE(activity."lastActivityAt", box."updatedAt") < NOW() - INTERVAL \'1 second\' * box."autoPauseInterval"',
+              'COALESCE(activity."lastActivityAt", box."updatedAt") < NOW() - INTERVAL \'1 second\' * box."autoPause"',
             )
             .orderBy('COALESCE(activity."lastActivityAt", box."updatedAt")', 'ASC')
             .limit(100)
@@ -116,7 +116,7 @@ export class BoxManager implements TrackableJobExecutions, OnApplicationShutdown
                 // Recheck after taking the state lock so a recent Exec/Files
                 // call cannot be paused based on a stale SQL timestamp.
                 const lastActivityAt = await this.boxActivityService.getLastActivityAt(box.id)
-                if (lastActivityAt && Date.now() - lastActivityAt.getTime() < box.autoPauseInterval * 1000) {
+                if (lastActivityAt && Date.now() - lastActivityAt.getTime() < box.autoPause * 1000) {
                   return
                 }
 
@@ -126,7 +126,7 @@ export class BoxManager implements TrackableJobExecutions, OnApplicationShutdown
                 }
 
                 this.logger.log(
-                  `Auto-pausing box ${box.id}: autoPauseInterval=${box.autoPauseInterval}s, autoDeleteInterval=${box.autoDeleteInterval}s`,
+                  `Auto-pausing box ${box.id}: autoPause=${box.autoPause}s, autoDelete=${box.autoDelete}s`,
                 )
                 await this.boxRepository.updateWhere(box.id, {
                   updateData,
@@ -134,7 +134,7 @@ export class BoxManager implements TrackableJobExecutions, OnApplicationShutdown
                     pending: false,
                     state: box.state,
                     desiredState: BoxDesiredState.STARTED,
-                    autoPauseInterval: box.autoPauseInterval,
+                    autoPause: box.autoPause,
                   },
                 })
 
@@ -182,9 +182,9 @@ export class BoxManager implements TrackableJobExecutions, OnApplicationShutdown
               desiredState: BoxDesiredState.STOPPED,
             })
             .andWhere('box.pending != true')
-            .andWhere('box."autoDeleteInterval" > 0')
+            .andWhere('box."autoDelete" > 0')
             .andWhere('activity."lastActivityAt" IS NOT NULL')
-            .andWhere('activity."lastActivityAt" < NOW() - INTERVAL \'1 second\' * box."autoDeleteInterval"')
+            .andWhere('activity."lastActivityAt" < NOW() - INTERVAL \'1 second\' * box."autoDelete"')
             .orderBy('activity."lastActivityAt"', 'ASC')
             .limit(100)
             .getMany()
@@ -197,7 +197,7 @@ export class BoxManager implements TrackableJobExecutions, OnApplicationShutdown
                 return
               }
 
-              this.logger.log(`Auto-deleting box ${box.id}: autoDeleteInterval=${box.autoDeleteInterval}s`)
+              this.logger.log(`Auto-deleting box ${box.id}: autoDelete=${box.autoDelete}s`)
 
               try {
                 const updateData = Box.getSoftDeleteUpdate(box)
@@ -207,7 +207,7 @@ export class BoxManager implements TrackableJobExecutions, OnApplicationShutdown
                     pending: false,
                     state: box.state,
                     desiredState: BoxDesiredState.STOPPED,
-                    autoDeleteInterval: box.autoDeleteInterval,
+                    autoDelete: box.autoDelete,
                   },
                 })
 

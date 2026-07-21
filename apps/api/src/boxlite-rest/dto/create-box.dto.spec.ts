@@ -43,27 +43,27 @@ describe('CreateBoxDto resource minimums', () => {
 describe('CreateBoxDto lifecycle policy', () => {
   it('accepts second-based lifecycle fields', async () => {
     const errors = await validate(
-      plainToInstance(CreateBoxDto, { auto_pause_interval: 900, auto_delete_interval: 604800 }),
+      plainToInstance(CreateBoxDto, { auto_pause: 900, auto_delete: 604800 }),
     )
 
     expect(errors).toHaveLength(0)
   })
 
   it('accepts the auto-resume switch', async () => {
-    const errors = await validate(plainToInstance(CreateBoxDto, { auto_resume_enabled: false }))
+    const errors = await validate(plainToInstance(CreateBoxDto, { auto_resume: false }))
 
     expect(errors).toHaveLength(0)
   })
 
-  it('rejects a non-boolean auto_resume_enabled', async () => {
-    const errors = await validate(plainToInstance(CreateBoxDto, { auto_resume_enabled: 'false' }))
+  it('rejects a non-boolean auto_resume', async () => {
+    const errors = await validate(plainToInstance(CreateBoxDto, { auto_resume: 'false' }))
 
-    expect(errors.find((error) => error.property === 'auto_resume_enabled')?.constraints).toHaveProperty('isBoolean')
+    expect(errors.find((error) => error.property === 'auto_resume')?.constraints).toHaveProperty('isBoolean')
   })
 
   it.each([
-    ['auto_pause_interval', -1],
-    ['auto_delete_interval', -2],
+    ['auto_pause', -1],
+    ['auto_delete', -2],
   ])('rejects invalid %s values', async (field, value) => {
     const errors = await validate(plainToInstance(CreateBoxDto, { [field]: value }))
 

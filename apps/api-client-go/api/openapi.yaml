@@ -6371,9 +6371,9 @@ components:
         desiredState: destroyed
         errorReason: The box is not running
         recoverable: true
-        autoPauseInterval: 900
-        autoDeleteInterval: 604800
-        autoResumeEnabled: true
+        autoPause: 900
+        autoDelete: 604800
+        autoResume: true
         volumes:
         - volumeId: volume123
           mountPath: /data
@@ -6473,15 +6473,15 @@ components:
           description: Whether the box error is recoverable.
           example: true
           type: boolean
-        autoPauseInterval:
+        autoPause:
           description: Auto-pause interval in seconds (0 means disabled)
           example: 900
           type: integer
-        autoDeleteInterval:
+        autoDelete:
           description: Auto-delete interval in seconds (0 means disabled)
           example: 604800
           type: integer
-        autoResumeEnabled:
+        autoResume:
           description: Whether the box should be automatically resumed on proxy access
           example: true
           type: boolean
@@ -6559,9 +6559,9 @@ components:
           desiredState: destroyed
           errorReason: The box is not running
           recoverable: true
-          autoPauseInterval: 900
-          autoDeleteInterval: 604800
-          autoResumeEnabled: true
+          autoPause: 900
+          autoDelete: 604800
+          autoResume: true
           volumes:
           - volumeId: volume123
             mountPath: /data
@@ -6596,9 +6596,9 @@ components:
           desiredState: destroyed
           errorReason: The box is not running
           recoverable: true
-          autoPauseInterval: 900
-          autoDeleteInterval: 604800
-          autoResumeEnabled: true
+          autoPause: 900
+          autoDelete: 604800
+          autoResume: true
           volumes:
           - volumeId: volume123
             mountPath: /data

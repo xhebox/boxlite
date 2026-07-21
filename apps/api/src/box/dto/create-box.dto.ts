@@ -140,7 +140,7 @@ export class CreateBoxDto {
   @IsOptional()
   @IsInt()
   @Min(0)
-  autoPauseInterval?: number
+  autoPause?: number
 
   @ApiPropertyOptional({
     description: 'Auto-delete interval in seconds (0 means disabled)',
@@ -150,7 +150,7 @@ export class CreateBoxDto {
   @IsOptional()
   @IsInt()
   @Min(0)
-  autoDeleteInterval?: number
+  autoDelete?: number
 
   @ApiPropertyOptional({
     description: 'Whether the box should be automatically resumed on proxy access',
@@ -158,7 +158,7 @@ export class CreateBoxDto {
   })
   @IsOptional()
   @IsBoolean()
-  autoResumeEnabled?: boolean
+  autoResume?: boolean
 
   @ApiPropertyOptional({
     description: 'Array of volumes to attach to the box',

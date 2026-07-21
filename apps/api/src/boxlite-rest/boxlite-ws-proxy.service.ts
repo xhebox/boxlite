@@ -119,7 +119,7 @@ export class BoxliteWsProxyService {
         this.respondAndClose(socket, 404, 'Not Found')
         return
       }
-      if (box.autoResumeEnabled) {
+      if (box.autoResume) {
         await this.autoResume.ensureReady(box.id, auth.organization)
       }
       // Mirror legacy toolbox path — opening a WS attach is user activity,

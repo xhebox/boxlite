@@ -32,20 +32,20 @@ describe('toBoxApiCreateRequest', () => {
   it('maps lifecycle seconds to the Box API wire fields', () => {
     const request = toBoxApiCreateRequest({
       autoPauseIntervalSeconds: 1800,
-      autoDeleteInterval: 604800,
+      autoDelete: 604800,
     })
 
-    expect(request.auto_pause_interval).toBe(1800)
-    expect(request.auto_delete_interval).toBe(604800)
-    expect(request.auto_resume_enabled).toBe(true)
+    expect(request.auto_pause).toBe(1800)
+    expect(request.auto_delete).toBe(604800)
+    expect(request.auto_resume).toBe(true)
   })
 
   it('maps auto-resume enabled to the Box API wire field', () => {
-    const enabledRequest = toBoxApiCreateRequest({ autoResumeEnabled: true })
-    expect(enabledRequest.auto_resume_enabled).toBe(true)
+    const enabledRequest = toBoxApiCreateRequest({ autoResume: true })
+    expect(enabledRequest.auto_resume).toBe(true)
 
-    const disabledRequest = toBoxApiCreateRequest({ autoResumeEnabled: false })
-    expect(disabledRequest.auto_resume_enabled).toBe(false)
+    const disabledRequest = toBoxApiCreateRequest({ autoResume: false })
+    expect(disabledRequest.auto_resume).toBe(false)
   })
 
   it('leaves memory undefined when no resources are given', () => {
@@ -56,18 +56,18 @@ describe('toBoxApiCreateRequest', () => {
 
 describe('validateLifecyclePolicy', () => {
   it('accepts disabled policies and a delete deadline after the pause deadline', () => {
-    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 0, autoDeleteInterval: 0 })).toBeNull()
-    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 900, autoDeleteInterval: 3600 })).toBeNull()
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 0, autoDelete: 0 })).toBeNull()
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 900, autoDelete: 3600 })).toBeNull()
   })
 
   it('rejects invalid sentinels and delete deadlines that do not follow pause', () => {
-    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: -1, autoDeleteInterval: 0 })).toMatch(
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: -1, autoDelete: 0 })).toMatch(
       /Auto-pause/,
     )
-    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 900, autoDeleteInterval: -1 })).toMatch(
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 900, autoDelete: -1 })).toMatch(
       /Auto-delete/,
     )
-    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 900, autoDeleteInterval: 900 })).toMatch(
+    expect(validateLifecyclePolicy({ autoPauseIntervalSeconds: 900, autoDelete: 900 })).toMatch(
       /greater than/,
     )
   })

@@ -89,9 +89,9 @@ export interface JsBoxOptions {
   ports?: JsPortSpec[];
   autoRemove?: boolean;
   detach?: boolean;
-  autoPauseInterval?: number;
-  autoDeleteInterval?: number;
-  autoResumeEnabled?: boolean;
+  autoPause?: number;
+  autoDelete?: number;
+  autoResume?: boolean;
   entrypoint?: string[];
   cmd?: string[];
   user?: string;
@@ -173,9 +173,9 @@ export interface JsBoxInfo {
   image: string;
   cpus: number;
   memoryMib: number;
-  autoPauseInterval?: number;
-  autoDeleteInterval?: number;
-  autoResumeEnabled?: boolean;
+  autoPause?: number;
+  autoDelete?: number;
+  autoResume?: boolean;
   healthStatus: JsHealthStatus;
 }
 

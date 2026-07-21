@@ -253,9 +253,9 @@ typedef struct CBoxInfo {
   int pid;
   int cpus;
   int memory_mib;
-  uint32_t auto_pause_interval;
-  uint32_t auto_delete_interval;
-  int auto_resume_enabled;
+  uint32_t auto_pause;
+  uint32_t auto_delete;
+  int auto_resume;
   int64_t created_at;
 } CBoxInfo;
 

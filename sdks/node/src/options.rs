@@ -197,16 +197,16 @@ pub struct JsBoxOptions {
     pub auto_remove: Option<bool>,
 
     /// Idle time in seconds before AutoPause; 0 disables AutoPause.
-    #[napi(js_name = "autoPauseInterval")]
-    pub auto_pause_interval: Option<u32>,
+    #[napi(js_name = "autoPause")]
+    pub auto_pause: Option<u32>,
 
     /// Time in seconds after stop before AutoDelete; 0 disables AutoDelete.
-    #[napi(js_name = "autoDeleteInterval")]
-    pub auto_delete_interval: Option<u32>,
+    #[napi(js_name = "autoDelete")]
+    pub auto_delete: Option<u32>,
 
     /// Whether the box automatically resumes when accessed after AutoPause.
-    #[napi(js_name = "autoResumeEnabled")]
-    pub auto_resume_enabled: Option<bool>,
+    #[napi(js_name = "autoResume")]
+    pub auto_resume: Option<bool>,
 
     /// Run box in detached mode (survives parent process exit, default: false)
     pub detach: Option<bool>,
@@ -434,9 +434,9 @@ impl TryFrom<JsBoxOptions> for BoxOptions {
                 ..Default::default()
             },
             auto_remove: js_opts.auto_remove.unwrap_or(false),
-            auto_pause_interval: js_opts.auto_pause_interval,
-            auto_delete_interval: js_opts.auto_delete_interval,
-            auto_resume_enabled: js_opts.auto_resume_enabled,
+            auto_pause: js_opts.auto_pause,
+            auto_delete: js_opts.auto_delete,
+            auto_resume: js_opts.auto_resume,
             detach: js_opts.detach.unwrap_or(false),
             entrypoint: js_opts.entrypoint,
             cmd: js_opts.cmd,
@@ -721,9 +721,9 @@ mod tests {
             }),
             ports: None,
             auto_remove: None,
-            auto_pause_interval: None,
-            auto_delete_interval: None,
-            auto_resume_enabled: None,
+            auto_pause: None,
+            auto_delete: None,
+            auto_resume: None,
             detach: None,
             entrypoint: None,
             cmd: None,
@@ -756,9 +756,9 @@ mod tests {
             network: None,
             ports: None,
             auto_remove: None,
-            auto_pause_interval: None,
-            auto_delete_interval: None,
-            auto_resume_enabled: None,
+            auto_pause: None,
+            auto_delete: None,
+            auto_resume: None,
             detach: None,
             entrypoint: None,
             cmd: None,

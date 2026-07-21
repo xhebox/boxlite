@@ -1612,7 +1612,7 @@ impl std::fmt::Debug for RuntimeImpl {
 pub(crate) struct LocalRuntime(pub(crate) SharedRuntimeImpl);
 
 fn reject_local_lifecycle_policy(options: &BoxOptions) -> BoxliteResult<()> {
-    if options.auto_pause_interval.is_some() || options.auto_delete_interval.is_some() {
+    if options.auto_pause.is_some() || options.auto_delete.is_some() {
         return Err(BoxliteError::Unsupported(
             "AutoPause and AutoDelete lifecycle policies are only supported by REST runtimes"
                 .into(),
@@ -1732,14 +1732,14 @@ mod tests {
         let mut options = BoxOptions::default();
         assert!(reject_local_lifecycle_policy(&options).is_ok());
 
-        options.auto_pause_interval = Some(0);
+        options.auto_pause = Some(0);
         assert!(matches!(
             reject_local_lifecycle_policy(&options),
             Err(BoxliteError::Unsupported(_))
         ));
 
-        options.auto_pause_interval = None;
-        options.auto_delete_interval = Some(3600);
+        options.auto_pause = None;
+        options.auto_delete = Some(3600);
         assert!(matches!(
             reject_local_lifecycle_policy(&options),
             Err(BoxliteError::Unsupported(_))

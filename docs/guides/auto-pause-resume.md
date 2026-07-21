@@ -1,100 +1,100 @@
-# AutoPause、AutoResume 与 AutoDelete
+# AutoPause, AutoResume, and AutoDelete
 
-BoxLite 云端 REST runtime 可以在 Box 空闲后自动停止虚拟机，并在下一次用户操作到来时重新启动。该能力复用已有的 `Stop` / `Start` 生命周期，不创建内存快照，也不引入新的 `Paused` 状态。
+The BoxLite cloud REST runtime can automatically stop a box after it becomes idle, and restart it on the next user operation. This reuses the existing `Stop` / `Start` lifecycle, does not create memory snapshots, and does not introduce a new `Paused` state.
 
-> 本文描述云端 REST runtime。嵌入式本地 runtime 不执行生命周期清扫；显式配置这些策略会返回 `Unsupported`。
+> This guide describes the cloud REST runtime. The embedded local runtime does not run a lifecycle sweeper; explicitly configuring these policies returns `Unsupported`.
 
-## 配置
+## Configuration
 
-生命周期间隔统一使用秒：
+Lifecycle intervals are always in seconds:
 
-| 字段 | 默认值 | 禁用值 | 含义 |
+| Field | Default | Disable Value | Meaning |
 |---|---:|---:|---|
-| `auto_pause_interval` | `900` | `0` | 最后一次有效活动后等待多久执行 Stop |
-| `auto_delete_interval` | `0` | `0` | Box 成功停止后等待多久删除 |
+| `auto_pause` | `900` | `0` | Wait time before Stop after the last valid activity |
+| `auto_delete` | `0` | `0` | Wait time before deletion after the box successfully stops |
 
-创建 Box 时可以设置策略：
+You can set the policy when creating a box:
 
 ```json
 {
   "image": "python:3.13",
-  "auto_pause_interval": 900,
-  "auto_delete_interval": 604800
+  "auto_pause": 900,
+  "auto_delete": 604800
 }
 ```
 
-设置 `auto_pause_interval: 0` 会关闭 AutoPause；设置 `auto_delete_interval: 0` 会关闭 AutoDelete。同时启用时，AutoDelete 间隔必须大于 AutoPause 间隔。
+Setting `auto_pause: 0` disables AutoPause; setting `auto_delete: 0` disables AutoDelete. When both are enabled, `auto_delete` must be greater than `auto_pause`.
 
-Python、Node.js、C 和 Go SDK 均可在创建时传入这两个字段。Box info 会返回当前生效的秒级值。
+The Python, Node.js, C, and Go SDKs can pass both fields at creation time. Box info returns the currently effective second-level values.
 
-## 生命周期行为
+## Lifecycle Behavior
 
-AutoPause 的行为是：
+AutoPause behaves as follows:
 
-1. Box 处于 `STARTED`，并且没有正在进行的状态变更。
-2. 最后一次有效活动超过 `auto_pause_interval`。
-3. 控制面提交 `STOPPED` 目标状态，并走正常 Stop 流程。
-4. 虚拟机停止后，Box 进入已有的 `STOPPED` 状态。
+1. The box is in `STARTED` and has no pending state transition.
+2. The last valid activity is older than `auto_pause`.
+3. The control plane submits `STOPPED` as the desired state and follows the normal Stop flow.
+4. After the VM stops, the box enters the existing `STOPPED` state.
 
-AutoResume 的行为是：
+AutoResume behaves as follows:
 
-1. 用户对已停止的 Box 发起 Exec、Files 或 WebSocket attach 操作。
-2. 控制面提交或加入已有的 Start 操作。
-3. 首个请求等待 Box 真正到达 `STARTED` 后再转发到 runner。
-4. 启动失败或超时时，请求直接失败，不会提前转发到尚未就绪的 Box。
+1. The user issues an Exec, Files, or WebSocket attach operation against a stopped box.
+2. The control plane submits or joins an existing Start operation.
+3. The first request waits until the box actually reaches `STARTED` before forwarding to the runner.
+4. If startup fails or times out, the request fails directly and is not forwarded to a box that is not yet ready.
 
-首次请求会承担冷启动延迟。多个并发请求会共享同一个 Start 状态变更，并分别等待同一状态事件。
+The first request pays the cold-start latency. Multiple concurrent requests share the same state transition and wait on the same state event.
 
-AutoDelete 从 Box 成功进入 `STOPPED` 时开始计时。到期后 Box 被删除，之后不能再通过 AutoResume 恢复。手动 Stop 也会开始该计时；将策略改为 `0` 会取消后续自动删除。
+AutoDelete starts counting when the box successfully enters `STOPPED`. After the interval expires, the box is deleted and can no longer be recovered via AutoResume. Manual Stop also starts this timer; changing the policy to `0` cancels future automatic deletion.
 
-## 哪些操作算作活动
+## What Counts as Activity
 
-| 操作 | 刷新活动时间 | 触发 AutoResume |
+| Operation | Refreshes Activity Time | Triggers AutoResume |
 |---|---|---|
-| Exec，以及 execution status/signal/resize/kill | 是 | 是 |
-| Files 读写 | 是 | 是 |
-| WebSocket attach | 仅收到真实客户端数据帧时 | 是 |
-| Metrics | 否 | 否 |
-| 端口预览和端口代理 | 否 | 否 |
+| Exec, execution status/signal/resize/kill | Yes | Yes |
+| Files read/write | Yes | Yes |
+| WebSocket attach | Only when real client data frames arrive | Yes |
+| Metrics | No | No |
+| Port preview and port proxy | No | No |
 
-Metrics 和端口流量属于观察或外部服务流量。持续抓取指标、健康检查或访问暴露端口不会让 Box 永久保持运行，也不会自动启动已停止的 Box。
+Metrics and port traffic are considered observability or external service traffic. Continuous metric scrapes, health checks, or traffic to exposed ports will not keep a box running indefinitely, nor will they automatically start a stopped box.
 
-## Stop 后保留什么
+## What Is Preserved After Stop
 
-AutoPause 不保存运行时内存。Stop 后：
+AutoPause does not preserve runtime memory. After Stop:
 
-- 持久化磁盘和挂载的 Volume 会保留；
-- 内存、进程和后台任务不会保留；
-- 终端会话和网络连接会断开；
-- AutoResume 后由镜像、持久化磁盘和应用启动逻辑重新建立运行环境。
+- Persistent disk and mounted volumes are preserved;
+- Memory, processes, and background tasks are not preserved;
+- Terminal sessions and network connections are dropped;
+- After AutoResume, the runtime environment is rebuilt from the image, persistent disk, and application startup logic.
 
-需要跨 Stop 保留的数据必须写入持久化磁盘或 Volume。不要依赖内存变量、后台进程或未落盘的文件。
+Data that must survive Stop must be written to persistent disk or volumes. Do not rely on in-memory variables, background processes, or files that have not been flushed to disk.
 
-## 计费模型
+## Billing Model
 
-AutoPause 的目的，是在空闲时停止计算资源。计费仍沿用平台现有的计量维度：
+The purpose of AutoPause is to stop compute resources when idle. Billing still uses the platform's existing metered dimensions:
 
 - CPU
 - RAM
 - GPU
 - Disk
 
-运行中的计算资源与停止后保留的持久化存储属于不同维度。具体单价、免费额度和结算规则以部署环境的计费页面与商业条款为准；本文不承诺固定价格。
+Running compute resources and persistent storage kept after Stop are different dimensions. Specific prices, free tiers, and billing rules depend on the deployment environment's billing page and commercial terms; this guide does not promise fixed pricing.
 
-## 常见问题
+## FAQ
 
-### 为什么访问 Metrics 没有自动启动 Box？
+### Why does accessing Metrics not automatically start the box?
 
-这是预期行为。Metrics 不属于用户工作负载活动，否则监控系统会阻止 AutoPause。
+This is expected. Metrics are not considered user workload activity; otherwise monitoring systems would prevent AutoPause.
 
-### 为什么端口服务停止了？
+### Why did the port service stop?
 
-端口代理不计活动。若服务需要常驻运行，请关闭 AutoPause，或通过真实的 Exec / Files / attach 工作流管理生命周期。
+Port proxies do not count as activity. If a service needs to stay running, disable AutoPause or manage the lifecycle through real Exec / Files / attach workflows.
 
-### AutoResume 会恢复原来的 shell 或进程吗？
+### Will AutoResume restore the previous shell or process?
 
-不会。AutoResume 是 Start，不是内存恢复。应用需要具备正常的重启能力。
+No. AutoResume is a Start, not a memory restore. Applications must be able to restart normally.
 
-### 关闭 AutoPause 后还能使用 AutoDelete 吗？
+### Can AutoDelete be used after disabling AutoPause?
 
-可以。此时 AutoDelete 不会主动停止运行中的 Box，但 Box 手动停止后仍会根据 `auto_delete_interval` 删除。
+Yes. In that case AutoDelete will not actively stop a running box, but a manually stopped box will still be deleted according to `auto_delete`.

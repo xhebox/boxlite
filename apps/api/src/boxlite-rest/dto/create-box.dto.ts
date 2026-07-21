@@ -103,16 +103,16 @@ export class CreateBoxDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  auto_pause_interval?: number
+  auto_pause?: number
 
   @IsOptional()
   @IsNumber()
   @Min(0)
-  auto_delete_interval?: number
+  auto_delete?: number
 
   @IsOptional()
   @IsBoolean()
-  auto_resume_enabled?: boolean
+  auto_resume?: boolean
 
   @IsOptional()
   @ValidateNested()

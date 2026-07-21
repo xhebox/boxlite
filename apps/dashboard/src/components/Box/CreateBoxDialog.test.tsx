@@ -246,7 +246,7 @@ describe('CreateBoxDialog per-org resource cap', () => {
     expect(mutationMocks.createBox).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'resume-test',
-        autoResumeEnabled: false,
+        autoResume: false,
       }),
     )
   })

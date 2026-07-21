@@ -217,7 +217,7 @@ export class BoxliteProxyController {
         .catch((err) => this.logger.warn(`updateLastActivityAt failed for ${box.id}: ${err}`))
     }
 
-    if (policy.autoResume && box.autoResumeEnabled) {
+    if (policy.autoResume && box.autoResume) {
       await this.autoResume.ensureReady(box.id, authContext.organization)
     }
 

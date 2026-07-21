@@ -5,23 +5,23 @@ export class AddBoxLifecycleSeconds1784250000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`ALTER TABLE "box" DROP COLUMN IF EXISTS "autoStopInterval"`)
-    await queryRunner.query(`ALTER TABLE "box" DROP COLUMN IF EXISTS "autoDeleteInterval"`)
-    await queryRunner.query(`ALTER TABLE "box" ADD "autoPauseInterval" integer NOT NULL DEFAULT 900`)
-    await queryRunner.query(`ALTER TABLE "box" ADD "autoDeleteInterval" integer NOT NULL DEFAULT 0`)
-    await queryRunner.query(`ALTER TABLE "box" ADD "autoResumeEnabled" boolean NOT NULL DEFAULT true`)
+    await queryRunner.query(`ALTER TABLE "box" DROP COLUMN IF EXISTS "autoDelete"`)
+    await queryRunner.query(`ALTER TABLE "box" ADD "autoPause" integer NOT NULL DEFAULT 900`)
+    await queryRunner.query(`ALTER TABLE "box" ADD "autoDelete" integer NOT NULL DEFAULT 0`)
+    await queryRunner.query(`ALTER TABLE "box" ADD "autoResume" boolean NOT NULL DEFAULT true`)
     await queryRunner.query(
-      `ALTER TABLE "box" ADD CONSTRAINT "box_auto_pause_interval_nonnegative" CHECK ("autoPauseInterval" >= 0)`,
+      `ALTER TABLE "box" ADD CONSTRAINT "box_auto_pause_interval_nonnegative" CHECK ("autoPause" >= 0)`,
     )
     await queryRunner.query(
-      `ALTER TABLE "box" ADD CONSTRAINT "box_auto_delete_interval_nonnegative" CHECK ("autoDeleteInterval" >= 0)`,
+      `ALTER TABLE "box" ADD CONSTRAINT "box_auto_delete_interval_nonnegative" CHECK ("autoDelete" >= 0)`,
     )
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`ALTER TABLE "box" DROP CONSTRAINT IF EXISTS "box_auto_delete_interval_nonnegative"`)
     await queryRunner.query(`ALTER TABLE "box" DROP CONSTRAINT IF EXISTS "box_auto_pause_interval_nonnegative"`)
-    await queryRunner.query(`ALTER TABLE "box" DROP COLUMN "autoResumeEnabled"`)
-    await queryRunner.query(`ALTER TABLE "box" DROP COLUMN "autoDeleteInterval"`)
-    await queryRunner.query(`ALTER TABLE "box" DROP COLUMN "autoPauseInterval"`)
+    await queryRunner.query(`ALTER TABLE "box" DROP COLUMN "autoResume"`)
+    await queryRunner.query(`ALTER TABLE "box" DROP COLUMN "autoDelete"`)
+    await queryRunner.query(`ALTER TABLE "box" DROP COLUMN "autoPause"`)
   }
 }
