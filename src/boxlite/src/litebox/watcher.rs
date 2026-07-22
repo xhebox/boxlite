@@ -101,7 +101,7 @@ pub(crate) struct BoxWatcher {
     box_id: BoxID,
     box_name: Option<String>,
     exit_file: std::path::PathBuf,
-    auto_remove: bool,
+    removes_on_exit: bool,
     /// `None` ⇒ exit-only watcher. `Some` ⇒ also probe the guest's health.
     health: Option<HealthProbe>,
 }
@@ -120,7 +120,7 @@ impl BoxWatcher {
             exit_file: bx
                 .layout
                 .container_exit_file(bx.config.container.id.as_str()),
-            auto_remove: bx.config.options.auto_remove,
+            removes_on_exit: bx.config.options.removes_on_stop(),
             health,
         }
     }
@@ -219,8 +219,8 @@ impl BoxWatcher {
             "Main command exited; box stopped"
         );
 
-        // NotFound is expected for an auto_remove box: the exit raced the cleanup
-        // that deleted it, and the box being gone is the state we wanted anyway.
+        // NotFound is expected for a remove-on-stop box: the exit raced the
+        // cleanup that deleted it, and the box being gone is the desired state.
         match runtime.box_manager.save_box(&self.box_id, &stopped) {
             Ok(()) | Err(BoxliteError::NotFound(_)) => {}
             Err(e) => tracing::warn!(
@@ -232,10 +232,10 @@ impl BoxWatcher {
 
         // The same tail `stop()` runs, because this is the box's *other* death.
         // Without it a long-lived runtime keeps handing out the spent handle from
-        // its cache, and an `auto_remove` box — the default — that ran to
+        // its cache, and a remove-on-stop box — the default — that ran to
         // completion is never cleaned up, because nobody called stop() to do it.
         runtime.invalidate_box_impl(&self.box_id, self.box_name.as_deref());
-        if self.auto_remove
+        if self.removes_on_exit
             && let Err(e) = runtime.remove_box(&self.box_id, false)
         {
             tracing::warn!(

@@ -15,7 +15,7 @@ use tokio_stream::StreamExt;
 fn main_command_opts(cmd: &[&str], tty: bool) -> BoxOptions {
     BoxOptions {
         rootfs: RootfsSpec::Image("alpine:latest".into()),
-        auto_remove: false,
+        auto_delete: Some(0),
         cmd: Some(cmd.iter().map(|s| s.to_string()).collect()),
         tty,
         ..Default::default()
@@ -129,7 +129,7 @@ async fn a_stopped_box_without_a_main_command_still_restarts_on_exec() {
     // No `cmd`: init is the image default, exactly as a cloud box is created.
     let opts = BoxOptions {
         rootfs: RootfsSpec::Image("alpine:latest".into()),
-        auto_remove: false,
+        auto_delete: Some(0),
         ..Default::default()
     };
     let handle = runtime.create(opts, None).await.expect("create box");
@@ -182,7 +182,7 @@ async fn a_stopped_no_command_box_refuses_to_serve_its_dead_vm() {
     // No `cmd` and no `entrypoint`: the gate lets this box's exec through.
     let opts = BoxOptions {
         rootfs: RootfsSpec::Image("alpine:latest".into()),
-        auto_remove: false,
+        auto_delete: Some(0),
         ..Default::default()
     };
     let handle = runtime.create(opts, None).await.expect("create box");

@@ -74,10 +74,10 @@ impl CreateArgs {
         // watchdog + the runtime's drop-time auto-stop) before its main command
         // records an exit code — the box then reports 0 instead of its real
         // code. Detached boxes have no foreground watcher, so auto-remove cannot
-        // apply — the same rule `run -d` enforces (and `auto_remove && detach`
-        // is rejected at sanitize).
+        // apply — the same rule `run -d` enforces (remove-on-stop with detach is
+        // rejected at sanitize).
         options.detach = true;
-        options.auto_remove = false;
+        options.auto_delete = Some(0);
         options.working_dir = self.workdir.clone();
         if let Some(ref exec) = self.entrypoint {
             options.entrypoint = Some(vec![exec.clone()]);
