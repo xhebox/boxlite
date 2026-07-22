@@ -498,6 +498,7 @@ impl std::fmt::Display for Secret {
         )
     }
 }
+
 fn default_auto_remove() -> bool {
     true
 }
@@ -505,6 +506,7 @@ fn default_auto_remove() -> bool {
 fn default_detach() -> bool {
     false
 }
+
 #[allow(deprecated)]
 impl Default for BoxOptions {
     fn default() -> Self {
