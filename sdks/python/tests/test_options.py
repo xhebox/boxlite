@@ -61,9 +61,7 @@ class TestAutoRemoveBehavior:
 
     def test_auto_delete_overrides_auto_remove(self, runtime):
         box = runtime.create(
-            boxlite.BoxOptions(
-                image="alpine:latest", auto_remove=False, auto_delete=60
-            )
+            boxlite.BoxOptions(image="alpine:latest", auto_remove=False, auto_delete=60)
         )
         box_id = box.id
         box.stop()
