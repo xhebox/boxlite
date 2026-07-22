@@ -518,6 +518,7 @@ fn parse_box_status(status: &str) -> BoxStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::options::BoxOptions;
 
     #[test]
     fn test_create_box_request_serialization() {
