@@ -328,6 +328,14 @@ pub struct BoxOptions {
     pub volumes: Vec<VolumeSpec>,
     pub network: NetworkSpec,
     pub ports: Vec<PortSpec>,
+    /// Automatically remove the box when stopped.
+    ///
+    /// Deprecated: use [`BoxOptions::auto_delete`]. When `auto_delete` is set,
+    /// it takes precedence over this field.
+    #[deprecated(note = "use auto_delete instead")]
+    #[serde(default = "default_auto_remove")]
+    pub auto_remove: bool,
+
     /// Idle time in seconds before AutoPause. `Some(0)` disables AutoPause.
     /// Only REST runtimes implement AutoPause; local runtimes return
     /// `Unsupported`.
@@ -339,7 +347,7 @@ pub struct BoxOptions {
     /// - `Some(0)`: keep the box after stop.
     /// - `Some(n>0)`: REST runtimes delete after `n` seconds; local runtimes
     ///   remove immediately on stop because they have no sweeper.
-    /// - `None` (default): preserve the historical remove-on-stop behavior.
+    /// - `None` (default): fall back to deprecated `auto_remove`.
     #[serde(default)]
     pub auto_delete: Option<u32>,
 
@@ -488,11 +496,14 @@ impl std::fmt::Display for Secret {
         )
     }
 }
+fn default_auto_remove() -> bool {
+    true
+}
 
 fn default_detach() -> bool {
     false
 }
-
+#[allow(deprecated)]
 impl Default for BoxOptions {
     fn default() -> Self {
         Self {
@@ -505,6 +516,7 @@ impl Default for BoxOptions {
             volumes: Vec::new(),
             network: NetworkSpec::default(),
             ports: Vec::new(),
+            auto_remove: default_auto_remove(),
             auto_pause: None,
             auto_delete: None,
             auto_resume: None,
@@ -520,24 +532,36 @@ impl Default for BoxOptions {
 }
 
 impl BoxOptions {
+    /// Resolve the modern and deprecated deletion inputs to one policy.
+    #[allow(deprecated)]
+    pub(crate) fn effective_auto_delete(&self) -> u32 {
+        self.auto_delete
+            .unwrap_or_else(|| u32::from(self.auto_remove))
+    }
+
+    /// Whether deletion is still sourced from deprecated `auto_remove`.
+    pub(crate) fn uses_legacy_auto_remove(&self) -> bool {
+        self.auto_delete.is_none()
+    }
+
     /// Whether the box is removed when it stops.
     ///
-    /// `Some(v>0)` removes, `Some(0)` keeps, and `None` preserves the
-    /// historical remove-on-stop default.
+    /// Explicit `auto_delete` takes precedence over deprecated `auto_remove`.
     pub(crate) fn removes_on_stop(&self) -> bool {
-        self.auto_delete.map_or(true, |interval| interval > 0)
+        self.effective_auto_delete() > 0
     }
 
     /// Sanitize and validate options.
     ///
     /// Validates option combinations:
-    /// - remove-on-stop (`auto_delete` unset or `>0`) with `detach=true` is invalid
+    /// - effective remove-on-stop (`auto_delete>0`, or deprecated `auto_remove`)
+    ///   with `detach=true` is invalid
     /// - `advanced.isolate_mounts=true` is only supported on Linux
     pub fn sanitize(&self) -> BoxliteResult<()> {
         if self.removes_on_stop() && self.detach {
             return Err(boxlite_shared::errors::BoxliteError::Config(
                 "remove-on-stop is incompatible with detach=true. Detached boxes should use \
-                 auto_delete=0 for manual lifecycle control."
+                 auto_delete=0 (or deprecated auto_remove=false) for manual lifecycle control."
                     .to_string(),
             ));
         }
@@ -737,10 +761,40 @@ mod tests {
     use crate::runtime::advanced_options::{SecurityOptions, SecurityOptionsBuilder};
 
     #[test]
+    #[allow(deprecated)]
     fn test_box_options_defaults() {
         let opts = BoxOptions::default();
         assert!(opts.removes_on_stop());
+        assert!(
+            opts.auto_remove,
+            "auto_remove should keep its legacy default"
+        );
         assert!(!opts.detach, "detach should default to false");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn explicit_auto_delete_takes_precedence_over_auto_remove() {
+        let keep = BoxOptions {
+            auto_remove: true,
+            auto_delete: Some(0),
+            ..Default::default()
+        };
+        assert!(!keep.removes_on_stop());
+
+        let remove = BoxOptions {
+            auto_remove: false,
+            auto_delete: Some(60),
+            ..Default::default()
+        };
+        assert!(remove.removes_on_stop());
+
+        let legacy_keep = BoxOptions {
+            auto_remove: false,
+            auto_delete: None,
+            ..Default::default()
+        };
+        assert!(!legacy_keep.removes_on_stop());
     }
 
     #[test]

@@ -87,11 +87,17 @@ export interface JsBoxOptions {
   volumes?: JsVolumeSpec[];
   network?: JsNetworkSpec;
   ports?: JsPortSpec[];
-  /** @deprecated Use autoDelete. */
+  /**
+   * @deprecated Use autoDelete. `true` maps to 1 and `false` maps to 0;
+   * an explicit autoDelete value takes precedence.
+   */
   autoRemove?: boolean;
   detach?: boolean;
+  /** Idle time in seconds before AutoPause; 0 disables AutoPause. */
   autoPause?: number;
+  /** Time in seconds after stop before AutoDelete; 0 disables AutoDelete. */
   autoDelete?: number;
+  /** Whether access automatically resumes an auto-paused box. */
   autoResume?: boolean;
   entrypoint?: string[];
   cmd?: string[];

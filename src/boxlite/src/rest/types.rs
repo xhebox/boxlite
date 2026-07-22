@@ -177,8 +177,12 @@ impl CreateBoxRequest {
             secrets,
             detach: Some(options.detach),
             tty: options.tty.then_some(true),
-            auto_pause: options.auto_pause,
-            auto_delete: options.auto_delete,
+            auto_pause: if options.uses_legacy_auto_remove() {
+                Some(options.auto_pause.unwrap_or(0))
+            } else {
+                options.auto_pause
+            },
+            auto_delete: Some(options.effective_auto_delete()),
             auto_resume: options.auto_resume,
         }
     }
@@ -601,6 +605,29 @@ mod tests {
             req.secrets.as_ref().unwrap()[0].placeholder,
             "<BOXLITE_SECRET:openai>"
         );
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_auto_remove_maps_at_the_rest_boundary() {
+        let opts = BoxOptions {
+            auto_remove: true,
+            auto_delete: None,
+            ..Default::default()
+        };
+        let req = CreateBoxRequest::from_options(&opts, None);
+        assert_eq!(req.auto_pause, Some(0));
+        assert_eq!(req.auto_delete, Some(1));
+
+        let modern = BoxOptions {
+            auto_remove: true,
+            auto_pause: Some(900),
+            auto_delete: Some(3600),
+            ..Default::default()
+        };
+        let req = CreateBoxRequest::from_options(&modern, None);
+        assert_eq!(req.auto_pause, Some(900));
+        assert_eq!(req.auto_delete, Some(3600));
     }
 
     #[test]

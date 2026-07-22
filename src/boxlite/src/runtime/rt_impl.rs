@@ -1614,7 +1614,7 @@ pub(crate) struct LocalRuntime(pub(crate) SharedRuntimeImpl);
 fn reject_local_lifecycle_policy(options: &BoxOptions) -> BoxliteResult<()> {
     // Local runtimes support auto_delete as a remove-on-stop policy, but AutoPause
     // needs a sweeper that the local runtime does not have, so it stays REST-only.
-    if options.auto_pause.is_some() {
+    if options.auto_pause.is_some_and(|seconds| seconds > 0) {
         return Err(BoxliteError::Unsupported(
             "AutoPause is only supported by REST runtimes".into(),
         ));
@@ -1734,11 +1734,13 @@ mod tests {
         assert!(reject_local_lifecycle_policy(&options).is_ok());
 
         options.auto_pause = Some(0);
+        assert!(reject_local_lifecycle_policy(&options).is_ok());
+
+        options.auto_pause = Some(1);
         assert!(matches!(
             reject_local_lifecycle_policy(&options),
             Err(BoxliteError::Unsupported(_))
         ));
-
         options.auto_pause = None;
         options.auto_delete = Some(3600);
         assert!(reject_local_lifecycle_policy(&options).is_ok());

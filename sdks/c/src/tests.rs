@@ -377,7 +377,8 @@ fn create_box_rejects_null_callback() {
 }
 
 #[test]
-fn auto_remove_maps_to_auto_delete() {
+#[allow(deprecated)]
+fn auto_remove_and_auto_delete_use_last_call_wins() {
     let image = CString::new("alpine:latest").unwrap();
     let mut opts: *mut CBoxliteOptions = ptr::null_mut();
     let mut error = FFIError::default();
@@ -388,10 +389,12 @@ fn auto_remove_maps_to_auto_delete() {
     unsafe {
         boxlite_options_set_auto_delete_interval(opts, 60);
         boxlite_options_set_auto_remove(opts, 0);
-        assert_eq!((*opts).options.auto_delete, Some(0));
+        assert!(!(*opts).options.auto_remove);
+        assert_eq!((*opts).options.auto_delete, None);
 
         boxlite_options_set_auto_remove(opts, 1);
-        assert_eq!((*opts).options.auto_delete, Some(1));
+        assert!((*opts).options.auto_remove);
+        assert_eq!((*opts).options.auto_delete, None);
 
         boxlite_options_set_auto_delete_interval(opts, 60);
         assert_eq!((*opts).options.auto_delete, Some(60));

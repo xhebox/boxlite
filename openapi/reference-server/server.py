@@ -139,8 +139,8 @@ class CreateBoxRequest(BaseModel):
     ports: Optional[list[dict]] = None
     network: Optional[NetworkSpec] = None
     secrets: Optional[list[SecretSpec]] = None
-    auto_pause: Optional[int] = None
-    auto_delete: Optional[int] = None
+    auto_pause: Optional[int] = Field(default=None, ge=0)
+    auto_delete: Optional[int] = Field(default=None, ge=0)
     auto_resume: Optional[bool] = None
     detach: Optional[bool] = False
     security: Optional[str] = None

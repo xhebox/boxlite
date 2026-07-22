@@ -65,8 +65,9 @@ class TestAutoRemoveBehavior:
                 image="alpine:latest", auto_remove=False, auto_delete=60
             )
         )
-        assert box is not None
-        runtime.remove(box.id)
+        box_id = box.id
+        box.stop()
+        assert runtime.get_info(box_id) is None
 
     def test_auto_remove_true_removes_box_on_stop(self, runtime):
         """Test that auto_remove=True removes box when stop() is called."""

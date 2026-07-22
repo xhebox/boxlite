@@ -89,7 +89,6 @@ pub fn default_configs() -> Vec<BoxConfig> {
             name: "default",
             options: BoxOptions {
                 rootfs: RootfsSpec::Image("alpine:latest".into()),
-                auto_delete: Some(0),
                 ..Default::default()
             },
             skip_on: SkipCondition::default(),

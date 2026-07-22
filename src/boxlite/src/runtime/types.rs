@@ -372,11 +372,11 @@ impl BoxInfo {
             cpus: config.options.cpus.unwrap_or(DEFAULT_CPUS),
             memory_mib: config.options.memory_mib.unwrap_or(DEFAULT_MEMORY_MIB),
             labels: HashMap::new(),
-            // Local runtimes do not implement lifecycle sweeping. These values
-            // describe the disabled local policy; REST responses overwrite them.
-            auto_pause: 0,
-            auto_delete: 0,
-            auto_resume: true,
+            // Local runtimes do not sweep lifecycle deadlines, but metadata keeps
+            // the configured values so callers can inspect the effective policy.
+            auto_pause: config.options.auto_pause.unwrap_or(0),
+            auto_delete: config.options.effective_auto_delete(),
+            auto_resume: config.options.auto_resume.unwrap_or(true),
             health_status: state.health_status,
             exit_code: state.exit_code,
         }

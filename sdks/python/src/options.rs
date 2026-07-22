@@ -504,10 +504,10 @@ impl PyBoxOptions {
 impl TryFrom<PyBoxOptions> for BoxOptions {
     type Error = boxlite::BoxliteError;
 
+    #[allow(deprecated)]
     fn try_from(py_opts: PyBoxOptions) -> Result<Self, Self::Error> {
-        let auto_delete = py_opts
-            .auto_delete
-            .or_else(|| py_opts.auto_remove.map(u32::from));
+        let auto_remove = py_opts.auto_remove;
+        let auto_delete = py_opts.auto_delete;
         let volumes = py_opts.volumes.into_iter().map(VolumeSpec::from).collect();
 
         let network = match py_opts.network {
@@ -548,7 +548,10 @@ impl TryFrom<PyBoxOptions> for BoxOptions {
             ..Default::default()
         };
 
-        // detach has a non-None core default, so None means "keep default".
+        // These core fields have concrete defaults. `None` means keep the default.
+        if let Some(auto_remove) = auto_remove {
+            opts.auto_remove = auto_remove;
+        }
 
         if let Some(detach) = py_opts.detach {
             opts.detach = detach;

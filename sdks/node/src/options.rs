@@ -356,11 +356,10 @@ impl TryFrom<JsNetworkSpec> for NetworkSpec {
 impl TryFrom<JsBoxOptions> for BoxOptions {
     type Error = boxlite_shared::errors::BoxliteError;
 
+    #[allow(deprecated)]
     fn try_from(js_opts: JsBoxOptions) -> Result<Self, Self::Error> {
-        let auto_delete = js_opts
-            .auto_delete
-            .or_else(|| js_opts.auto_remove.map(u32::from))
-            .or(Some(0)); // Preserve Node's historical keep-on-stop default.
+        let auto_remove = js_opts.auto_remove.unwrap_or(false);
+        let auto_delete = js_opts.auto_delete;
         // Convert volumes
         let volumes = js_opts
             .volumes
@@ -433,6 +432,7 @@ impl TryFrom<JsBoxOptions> for BoxOptions {
             volumes,
             network,
             ports,
+            auto_remove,
             advanced: AdvancedBoxOptions {
                 security,
                 health_check,
@@ -709,6 +709,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn box_options_from_js_allow_net() {
         let js = JsBoxOptions {
             image: Some("alpine:latest".into()),
@@ -740,10 +741,13 @@ mod tests {
         let mut both = js.clone();
         both.auto_remove = Some(false);
         both.auto_delete = Some(60);
-        assert_eq!(BoxOptions::try_from(both).unwrap().auto_delete, Some(60));
+        let both = BoxOptions::try_from(both).unwrap();
+        assert!(!both.auto_remove);
+        assert_eq!(both.auto_delete, Some(60));
 
         let opts = BoxOptions::try_from(js).unwrap();
-        assert_eq!(opts.auto_delete, Some(0));
+        assert!(!opts.auto_remove);
+        assert_eq!(opts.auto_delete, None);
         match opts.network {
             NetworkSpec::Enabled { allow_net } => {
                 assert_eq!(allow_net, vec!["example.com", "*.openai.com"]);

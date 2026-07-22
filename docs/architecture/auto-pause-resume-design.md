@@ -16,7 +16,7 @@ auto_delete: integer seconds, 0 disables
 auto_resume: boolean, default true; user operations resume an auto-paused box when enabled
 ```
 
-The default `auto_pause` is `900` seconds, the default `auto_delete` is `0`, and the default `auto_resume` is `true`. Create and read APIs and the Rust, Python, Node.js, C, and Go SDK boundaries use these same semantics. AutoResume is implemented by the cloud control plane; the embedded local runtime has no paused state to resume.
+The default `auto_pause` is `900` seconds, the default `auto_delete` is `0`, and the default `auto_resume` is `true`. Create and read APIs and the Rust, Python, Node.js, C, and Go SDK boundaries use these same semantics. AutoResume is implemented by the cloud control plane; the embedded local runtime has no paused state to resume. SDKs continue to accept deprecated `auto_remove`; when `auto_delete` is explicit it takes precedence, otherwise `auto_remove=false/true` maps to `auto_delete=0/1`.
 
 The internal database columns are `autoPause`, `autoDelete`, `autoResume`, and `lastActivityAt`. Public names remain stable.
 
@@ -107,7 +107,7 @@ Therefore, if a user changes the policy, manually starts or stops the box, or an
 
 The local runtime:
 
-- Preserves the historical remove-on-stop behavior when `auto_delete` is unset;
+- Preserves the historical `auto_remove` remove-on-stop behavior when `auto_delete` is unset;
 - Uses `auto_delete=0` to keep a stopped box and a positive value for immediate local remove-on-stop;
 - Returns `Unsupported` when AutoPause is explicitly configured, because it has no lifecycle sweeper;
 - Does not implement cloud AutoResume because local boxes do not enter an AutoPaused state.

@@ -710,6 +710,9 @@ fn box_info_to_response(info: &BoxInfo) -> BoxResponse {
         cpus: info.cpus,
         memory_mib: info.memory_mib,
         labels: info.labels.clone(),
+        auto_pause: info.auto_pause,
+        auto_delete: info.auto_delete,
+        auto_resume: info.auto_resume,
         exit_code: info.exit_code,
     }
 }
@@ -742,6 +745,7 @@ fn build_box_options(req: &CreateBoxRequest) -> Result<BoxOptions, boxlite::Boxl
     // uniformly. Operators who want a different policy run the
     // server with a different default; clients cannot relax it.
 
+    let auto_delete = req.auto_delete.unwrap_or(0);
     Ok(BoxOptions {
         rootfs,
         cpus: req.cpus,
@@ -754,8 +758,12 @@ fn build_box_options(req: &CreateBoxRequest) -> Result<BoxOptions, boxlite::Boxl
         cmd: req.cmd.clone(),
         user: req.user.clone(),
         tty: req.tty.unwrap_or(false),
-        auto_delete: Some(req.auto_delete.unwrap_or(0)),
-        detach: req.detach.unwrap_or(true),
+        auto_pause: req.auto_pause,
+        auto_delete: Some(auto_delete),
+        auto_resume: req.auto_resume,
+        // Preserve the serve API's historical detached default for persistent
+        // boxes, but do not synthesize an invalid detached remove-on-stop box.
+        detach: req.detach.unwrap_or(auto_delete == 0),
         ..Default::default()
     })
 }
@@ -1285,6 +1293,26 @@ mod tests {
         assert!(
             !build_box_options(&without).expect("build").tty,
             "no tty asked for, none granted"
+        );
+    }
+
+    #[test]
+    fn build_box_options_carries_lifecycle_policy_and_uses_compatible_detach_default() {
+        let req: super::types::CreateBoxRequest = serde_json::from_str(
+            r#"{"auto_pause": 900, "auto_delete": 3600, "auto_resume": false}"#,
+        )
+        .expect("lifecycle body must deserialize");
+        let opts = build_box_options(&req).expect("build lifecycle options");
+        assert_eq!(opts.auto_pause, Some(900));
+        assert_eq!(opts.auto_delete, Some(3600));
+        assert_eq!(opts.auto_resume, Some(false));
+        assert!(!opts.detach, "remove-on-stop must not default to detached");
+
+        let persistent: super::types::CreateBoxRequest =
+            serde_json::from_str(r#"{"auto_delete": 0}"#).expect("body must deserialize");
+        assert!(
+            build_box_options(&persistent).expect("build").detach,
+            "persistent boxes keep the serve API's historical detached default"
         );
     }
 
