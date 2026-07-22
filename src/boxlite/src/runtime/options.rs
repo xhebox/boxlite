@@ -331,7 +331,8 @@ pub struct BoxOptions {
     /// Automatically remove the box when stopped.
     ///
     /// Deprecated: use [`BoxOptions::auto_delete`]. When `auto_delete` is set,
-    /// it takes precedence over this field.
+    /// it takes precedence over this field. REST runtimes do not transmit this
+    /// legacy field and preserve the remote server's lifecycle defaults.
     #[deprecated(note = "use auto_delete instead")]
     #[serde(default = "default_auto_remove")]
     pub auto_remove: bool,
@@ -347,7 +348,8 @@ pub struct BoxOptions {
     /// - `Some(0)`: keep the box after stop.
     /// - `Some(n>0)`: REST runtimes delete after `n` seconds; local runtimes
     ///   remove immediately on stop because they have no sweeper.
-    /// - `None` (default): fall back to deprecated `auto_remove`.
+    /// - `None` (default): local runtimes fall back to deprecated `auto_remove`;
+    ///   REST runtimes preserve the remote server's AutoDelete default.
     #[serde(default)]
     pub auto_delete: Option<u32>,
 
@@ -537,11 +539,6 @@ impl BoxOptions {
     pub(crate) fn effective_auto_delete(&self) -> u32 {
         self.auto_delete
             .unwrap_or_else(|| u32::from(self.auto_remove))
-    }
-
-    /// Whether deletion is still sourced from deprecated `auto_remove`.
-    pub(crate) fn uses_legacy_auto_remove(&self) -> bool {
-        self.auto_delete.is_none()
     }
 
     /// Whether the box is removed when it stops.

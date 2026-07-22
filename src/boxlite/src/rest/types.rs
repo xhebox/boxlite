@@ -177,12 +177,11 @@ impl CreateBoxRequest {
             secrets,
             detach: Some(options.detach),
             tty: options.tty.then_some(true),
-            auto_pause: if options.uses_legacy_auto_remove() {
-                Some(options.auto_pause.unwrap_or(0))
-            } else {
-                options.auto_pause
-            },
-            auto_delete: Some(options.effective_auto_delete()),
+            // The deprecated remove-on-stop flag was never applied by the cloud
+            // control-plane mapper. Keep remote defaults unchanged and only send
+            // the modern lifecycle fields when callers explicitly configure them.
+            auto_pause: options.auto_pause,
+            auto_delete: options.auto_delete,
             auto_resume: options.auto_resume,
         }
     }
@@ -609,15 +608,17 @@ mod tests {
 
     #[test]
     #[allow(deprecated)]
-    fn deprecated_auto_remove_maps_at_the_rest_boundary() {
-        let opts = BoxOptions {
-            auto_remove: true,
-            auto_delete: None,
-            ..Default::default()
-        };
-        let req = CreateBoxRequest::from_options(&opts, None);
-        assert_eq!(req.auto_pause, Some(0));
-        assert_eq!(req.auto_delete, Some(1));
+    fn deprecated_auto_remove_does_not_change_rest_lifecycle_defaults() {
+        for auto_remove in [false, true] {
+            let opts = BoxOptions {
+                auto_remove,
+                auto_delete: None,
+                ..Default::default()
+            };
+            let req = CreateBoxRequest::from_options(&opts, None);
+            assert_eq!(req.auto_pause, None);
+            assert_eq!(req.auto_delete, None);
+        }
 
         let modern = BoxOptions {
             auto_remove: true,

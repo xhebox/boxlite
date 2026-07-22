@@ -88,8 +88,9 @@ export interface JsBoxOptions {
   network?: JsNetworkSpec;
   ports?: JsPortSpec[];
   /**
-   * @deprecated Use autoDelete. `true` maps to 1 and `false` maps to 0;
-   * an explicit autoDelete value takes precedence.
+   * @deprecated Use autoDelete. Preserved for embedded remove-on-stop
+   * compatibility; an explicit autoDelete value takes precedence. Remote
+   * runtimes preserve server lifecycle defaults when autoDelete is omitted.
    */
   autoRemove?: boolean;
   detach?: boolean;
