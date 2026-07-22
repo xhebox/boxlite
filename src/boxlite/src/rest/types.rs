@@ -317,6 +317,44 @@ pub(crate) struct ListBoxesResponse {
 }
 
 // ============================================================================
+// Named volumes (`/v1/volumes`)
+// ============================================================================
+
+/// Body for `POST /v1/volumes`. Volume creation takes no parameters — the
+/// server assigns the id — so the body is empty.
+#[derive(Debug, Serialize)]
+pub(crate) struct CreateVolumeRequest {}
+
+/// A single volume as returned by the REST API.
+#[derive(Debug, Deserialize)]
+pub(crate) struct VolumeResponse {
+    pub id: String,
+    pub created_at: String,
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
+}
+
+impl VolumeResponse {
+    pub fn to_volume_info(&self) -> crate::volumes::VolumeInfo {
+        let created_at = chrono::DateTime::parse_from_rfc3339(&self.created_at)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now());
+
+        crate::volumes::VolumeInfo {
+            id: self.id.clone(),
+            created_at,
+            size_bytes: self.size_bytes,
+        }
+    }
+}
+
+/// Response for `GET /v1/volumes`.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ListVolumesResponse {
+    pub volumes: Vec<VolumeResponse>,
+}
+
+// ============================================================================
 // Snapshot / Clone / Export
 // ============================================================================
 

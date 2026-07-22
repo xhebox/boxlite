@@ -95,6 +95,22 @@ pub(super) struct ListBoxesResponse {
 }
 
 // ============================================================================
+// Named volume types (`/v1/volumes`)
+// ============================================================================
+
+#[derive(Serialize)]
+pub(super) struct VolumeResponse {
+    pub id: String,
+    pub created_at: String,
+    pub size_bytes: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub(super) struct ListVolumesResponse {
+    pub volumes: Vec<VolumeResponse>,
+}
+
+// ============================================================================
 // Execution Types
 // ============================================================================
 
